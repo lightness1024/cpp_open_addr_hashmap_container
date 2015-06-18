@@ -2,6 +2,11 @@
 
 #include <hashmap.hpp>
 #include <memory>
+#include <chrono>
+#include <iostream>
+#include <unordered_map>
+#include <map>
+#include <string>
 
 #undef _ASSERT  // why is this defined even without any microsoft horror included ?
 
@@ -32,6 +37,35 @@ struct NeedCopy
 	}
 	std::shared_ptr<int> ptr;
 };
+
+template< typename T >
+void sideeffect(T val)
+{
+	static T volatile sv = val;
+	auto s = std::to_string(sv);
+	if (s.size() > 100)
+		std::cout << "";
+}
+
+#ifdef _MSC_VER
+
+// https://stackoverflow.com/questions/16299029/resolution-of-stdchronohigh-resolution-clock-doesnt-correspond-to-measureme
+struct HighResClock
+{
+	typedef long long                               rep;
+	typedef std::nano                               period;
+	typedef std::chrono::duration<rep, period>      duration;
+	typedef std::chrono::time_point<HighResClock>   time_point;
+	static const bool is_steady = true;
+
+	static time_point now();
+};
+
+#define high_res_get_now() HighResClock::now()
+
+#else
+# define high_res_get_now() std::chrono::high_resolution_clock::now()
+#endif
 
 int main()
 {
@@ -172,4 +206,238 @@ int main()
 		 mymap2.swap(mymap); }
 		 _ASSERT(mymap.empty());
 	 }
+
+#ifdef NDEBUG
+
+	// bit of benching:
+
+	std::cout << "== 1 million int pushes ==" << std::endl;
+
+	{
+		srand(0);
+		auto start = high_res_get_now();
+
+		std::vector<int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap.push_back(rand());
+
+		auto end = high_res_get_now();
+
+		auto diff = end - start;
+
+		std::cout << "std vector: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	{
+		srand(0);
+		auto start = high_res_get_now();
+
+		std::vector<int> mymap;
+		mymap.reserve(1000000);
+		for (int i = 0; i < 1000000; ++i)
+			mymap.push_back(rand());
+
+		auto end = high_res_get_now();
+
+		auto diff = end - start;
+
+		std::cout << "reserved vector: \t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	{
+		srand(0);
+		auto start = high_res_get_now();
+		
+		container::hash_map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto end = high_res_get_now();
+
+		auto diff = end - start;
+
+		std::cout << "*open address: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	{
+		srand(0);
+		auto start = high_res_get_now();
+
+		container::hash_map<int, int> mymap;
+		mymap.reserve(50000);  // weird. this was the only value that worked well
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto end = high_res_get_now();
+
+		auto diff = end - start;
+
+		std::cout << "*reserved openaddr: \t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	{
+		srand(0);
+		auto start = high_res_get_now();
+
+		std::unordered_map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto end = high_res_get_now();
+
+		auto diff = end - start;
+
+		std::cout << "std unordered: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	{
+		srand(0);
+		auto start = high_res_get_now();
+
+		std::map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto end = high_res_get_now();
+
+		auto diff = end - start;
+
+		std::cout << "std map: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	std::cout << "\n== 100k random erasures ==" << std::endl;
+
+	{
+		srand(0);
+
+		container::hash_map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto start = high_res_get_now();
+
+		for (int i = 0; i < 100000; ++i)
+			mymap.erase(rand());
+
+		auto end = high_res_get_now();
+
+		auto diff = end - start;
+
+		std::cout << "*openaddr: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	{
+		srand(0);
+		std::unordered_map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto start = high_res_get_now();
+
+		for (int i = 0; i < 100000; ++i)
+			mymap.erase(rand());
+
+		auto end = high_res_get_now();
+
+		auto diff = end - start;
+
+		std::cout << "std unordered: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	{
+		srand(0);
+		std::map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto start = high_res_get_now();
+
+		for (int i = 0; i < 100000; ++i)
+			mymap.erase(rand());
+
+		auto end = high_res_get_now();
+
+		auto diff = end - start;
+
+		std::cout << "std map: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	std::cout << "\n== 1M iteration ==" << std::endl;
+
+	{
+		srand(0);
+
+		container::hash_map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto start = high_res_get_now();
+
+		size_t cnt {0};
+		for (int i = 0; i < 20; ++i)
+			for (auto& it : mymap)
+				++cnt;
+
+		auto end = high_res_get_now();
+
+		sideeffect(mymap.begin()->second);
+		sideeffect(cnt);
+		if (cnt != mymap.size() * 20)
+			std::cout << "!! severe bug." << std::endl;
+
+		auto diff = end - start;
+
+		std::cout << "*openaddr: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	{
+		srand(0);
+		std::unordered_map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto start = high_res_get_now();
+
+		size_t cnt{0};
+		for (int i = 0; i < 20; ++i)
+			for (auto& it : mymap)
+				++cnt;
+
+		auto end = high_res_get_now();
+
+		sideeffect(mymap.begin()->second);
+		sideeffect(cnt);
+		if (cnt != mymap.size() * 20)
+			std::cout << "!! severe bug." << std::endl;
+
+		auto diff = end - start;
+
+		std::cout << "std unordered: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	{
+		srand(0);
+		std::map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto start = high_res_get_now();
+
+		size_t cnt{0};
+		for (int i = 0; i < 20; ++i)
+			for (auto& it : mymap)
+				++cnt;
+
+		auto end = high_res_get_now();
+
+		sideeffect(mymap.begin()->second);
+		sideeffect(cnt);
+		if (cnt != mymap.size() * 20)
+			std::cout << "!! severe bug." << std::endl;
+
+		auto diff = end - start;
+
+		std::cout << "std map: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+#endif
 }

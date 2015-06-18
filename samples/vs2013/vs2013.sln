@@ -7,9 +7,12 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "vs2013", "vs2013.vcxproj", 
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Bench|Win32 = Bench|Win32
 		Debug|Win32 = Debug|Win32
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4CDBF358-7965-4705-9D2C-B780A052B328}.Bench|Win32.ActiveCfg = Bench|Win32
+		{4CDBF358-7965-4705-9D2C-B780A052B328}.Bench|Win32.Build.0 = Bench|Win32
 		{4CDBF358-7965-4705-9D2C-B780A052B328}.Debug|Win32.ActiveCfg = Debug|Win32
 		{4CDBF358-7965-4705-9D2C-B780A052B328}.Debug|Win32.Build.0 = Debug|Win32
 	EndGlobalSection
