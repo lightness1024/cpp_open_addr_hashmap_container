@@ -23,18 +23,21 @@ termes.
 #define POOL_SERHUM_INCLUDEGUARD_L1024_82014 1
 
 #include <algorithm>
-#include <boost/noncopyable.hpp>
 
 namespace container
 {
 	namespace detail
 	{
-		struct uninitialized_space : boost::noncopyable
+		struct uninitialized_space
 		{
+			uninitialized_space(uninitialized_space const&) = delete;
+			uninitialized_space(uninitialized_space&&) = delete;
+
 			uninitialized_space()
 				: zone(nullptr),
 				  slots(0)
 			{}
+
 			~uninitialized_space()
 			{
 				clear();
@@ -64,6 +67,7 @@ namespace container
 				std::swap(zone, rhs.zone);
 				std::swap(slots, rhs.slots);
 			}
+			
 		};
 	}
 

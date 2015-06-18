@@ -28,15 +28,19 @@ termes.
 #include <exception>
 #include <new>
 #include <tuple>
+#include <vector>
 #include "pool.hpp"
-#include "myutils.hpp"
 
 namespace container
 {
 	template< typename MapValueType >
-	struct map_buckets : boost::noncopyable
+	struct map_buckets
 	{
 		typedef MapValueType	value_type;
+
+		map_buckets() = default;
+		map_buckets(map_buckets const&) = delete;
+		map_buckets(map_buckets&&) = delete;
 		
 		~map_buckets()
 		{
