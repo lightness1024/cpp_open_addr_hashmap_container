@@ -1,28 +1,30 @@
-/*** Lightness1024! ProgrammatO E.U.R.L.      ***/
-/*** 08/2014                                  ***/
-/*** © Vivien Oddou                           ***/
+/*** Lightness1024! (V.Oddou)       ***/
+/*** Copyright 08/2014 Vivien Oddou ***/
 
+/*** licensing (specific only to pool.hpp):
+- Do What the Fuck You Want to Public License. (http://www.wtfpl.net/)
+***/
+/***
+disclaimer 
 
-/*
-//-----------------------------------------------------------------------
-Ce logiciel est régi par la licence CeCILL soumise au droit français et
-respectant les principes de diffusion des logiciels libres. Vous pouvez
-utiliser, modifier et/ou redistribuer ce programme sous les conditions
-de la licence CeCILL telle que diffusée par le CEA, le CNRS et l'INRIA
-sur le site "http://www.cecill.info".
+This software is provided 'as-is', without any express or implied
+warranty.  In no event will the authors be held liable for any damages
+arising from the use of this software.
 
-(...)
-
-Le fait que vous puissiez accéder à cet en-tête signifie que vous avez
-pris connaissance de la licence CeCILL, et que vous en avez accepté les
-termes.
-//-----------------------------------------------------------------------
-*/
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely.
+***/
 
 #ifndef POOL_SERHUM_INCLUDEGUARD_L1024_82014
 #define POOL_SERHUM_INCLUDEGUARD_L1024_82014 1
 
 #include <algorithm>
+
+#ifndef _ASSERT
+# include <assert.h>
+# define _ASSERT(a) assert(a)
+#endif
 
 namespace container
 {

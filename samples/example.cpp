@@ -1,5 +1,9 @@
 // demonstrates sample usage for the hash map
 
+// any code in this file (example.cpp) is usable/copiable freely
+// (not bound by the terms of the zlib license)
+// consider it public domain.
+
 #include <hashmap.hpp>
 #include <memory>
 #include <chrono>
@@ -8,12 +12,15 @@
 #include <map>
 #include <string>
 
-#undef _ASSERT  // why is this defined even without any microsoft horror included ?
+#undef _ASSERT
+#undef VERIFY
 
 #ifndef _ASSERT
 # include <assert.h>
 # define _ASSERT(a) assert(a)
 #endif
+
+#define VERIFY(a) _ASSERT(a)
 
 int gcnt = 0;
 struct NeedCopy
@@ -67,8 +74,40 @@ struct HighResClock
 # define high_res_get_now() std::chrono::high_resolution_clock::now()
 #endif
 
+void test01();
+void test02();
+void test03();
+void test04();
+void test05();
+void test06();
+void test07();
+void test08();
+void test09();
+void test10();
+
 int main()
 {
+	test01();
+	test02();
+	test03();
+	test04();
+	test05();
+	test06();
+	test07();
+	test08();
+	//test09();
+	test10();
+
+	{
+		// code from
+// http://build.shr-project.org/sources/svn/gcc.gnu.org/svn/gcc/branches/gcc-4_6-branch/libstdc++-v3/testsuite/tr1/6_containers/unordered_map/24064.cc
+		container::hash_map<int, char> m;
+		for (int i = 0; i < 1000; ++i)
+			m[i] = '0' + i % 9;
+
+		for (int i = 0; i < 1000; ++i)
+			VERIFY(++m.find(i)->second == '1' + i % 9);
+	}
 
 	{
 		container::hash_map< std::string, NeedCopy > testmap;
@@ -247,7 +286,7 @@ int main()
 	{
 		srand(0);
 		auto start = high_res_get_now();
-		
+
 		container::hash_map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
 			mymap[rand()] = rand();
@@ -440,4 +479,496 @@ int main()
 		std::cout << "std map: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
 	}
 #endif
+}
+
+// taken from gcc testsuite
+void test01()
+{
+	// 2005-2-18  Matt Austern  <austern@apple.com>
+	// Copyright (C) 2005, 2009 Free Software Foundation, Inc.
+	typedef container::hash_map<std::string, int> Map;
+	typedef std::pair<const std::string, int> Pair;
+
+	Map m;
+	VERIFY(m.empty());
+
+	std::pair<Map::iterator, bool> tmp = m.insert(Pair("grape", 3));
+	Map::iterator i = tmp.first;
+	VERIFY(tmp.second);
+
+	Map::iterator i2 = m.find("grape");
+	VERIFY(i2 != m.end());
+	VERIFY(i2 == i);
+	VERIFY(i2->first == "grape");
+	VERIFY(i2->second == 3);
+
+	Map::iterator i3 = m.find("lime");
+	VERIFY(i3 == m.end());
+}
+
+void test02()
+{
+	// 2005-2-17  Matt Austern  <austern@apple.com>
+	typedef container::hash_map<std::string, int> Map;
+	typedef std::pair<const std::string, int> Pair;
+
+	Map m;
+	VERIFY(m.empty());
+
+	Pair A[5] =
+	{
+		Pair("red", 5),
+		Pair("green", 9),
+		Pair("blue", 3),
+		Pair("cyan", 8),
+		Pair("magenta", 7)
+	};
+
+	m.insert(A + 0, A + 5);
+	VERIFY(m.size() == 5);
+	VERIFY(std::distance(m.begin(), m.end()) == 5);
+
+	VERIFY(m["red"] == 5);
+	VERIFY(m["green"] == 9);
+	VERIFY(m["blue"] == 3);
+	VERIFY(m["cyan"] == 8);
+	VERIFY(m["magenta"] == 7);
+}
+
+void test03()
+{
+	// 2005-2-17  Matt Austern  <austern@apple.com>
+	typedef container::hash_map<std::string, int> Map;
+	typedef std::pair<const std::string, int> Pair;
+
+	Map m;
+	VERIFY(m.empty());
+
+	Pair A[9] =
+	{
+		Pair("red", 5),
+		Pair("green", 9),
+		Pair("red", 19),
+		Pair("blue", 3),
+		Pair("blue", 60),
+		Pair("cyan", 8),
+		Pair("magenta", 7),
+		Pair("blue", 99),
+		Pair("green", 33)
+	};
+
+	m.insert(A + 0, A + 9);
+	VERIFY(m.size() == 5);
+	VERIFY(std::distance(m.begin(), m.end()) == 5);
+
+	VERIFY(m["red"] == 5);
+	VERIFY(m["green"] == 9);
+	VERIFY(m["blue"] == 3);
+	VERIFY(m["cyan"] == 8);
+	VERIFY(m["magenta"] == 7);
+}
+
+void test04()
+{
+	// 2005-2-17  Matt Austern  <austern@apple.com>
+	typedef container::hash_map<std::string, int> Map;
+	typedef std::pair<const std::string, int> Pair;
+
+	Map m;
+	VERIFY(m.empty());
+
+	std::pair<Map::iterator, bool> p = m.insert(Pair("abcde", 3));
+	VERIFY(p.second);
+	VERIFY(m.size() == 1);
+	VERIFY(std::distance(m.begin(), m.end()) == 1);
+	VERIFY(p.first == m.begin());
+	VERIFY(p.first->first == "abcde");
+	VERIFY(p.first->second == 3);
+}
+
+void test05()
+{
+	// 2005-2-17  Matt Austern  <austern@apple.com>
+	typedef container::hash_map<std::string, int> Map;
+	typedef std::pair<const std::string, int> Pair;
+
+	Map m;
+	VERIFY(m.empty());
+
+	std::pair<Map::iterator, bool> p1 = m.insert(Pair("abcde", 3));
+	std::pair<Map::iterator, bool> p2 = m.insert(Pair("abcde", 7));
+
+	VERIFY(p1.second);
+	VERIFY(!p2.second);
+	VERIFY(m.size() == 1);
+	VERIFY(p1.first == p2.first);
+	VERIFY(p1.first->first == "abcde");
+	VERIFY(p2.first->second == 3);
+}
+
+void test06()
+{
+	// 2005-2-17  Matt Austern  <austern@apple.com>
+	typedef container::hash_map<std::string, int> Map;
+	typedef std::pair<const std::string, int> Pair;
+
+	Map m;
+	VERIFY(m.empty());
+
+	m["red"] = 17;
+	VERIFY(m.size() == 1);
+	VERIFY(m.begin()->first == "red");
+	VERIFY(m.begin()->second == 17);
+	VERIFY(m["red"] == 17);
+
+	m["blue"] = 9;
+	VERIFY(m.size() == 2);
+	VERIFY(m["blue"] == 9);
+
+	m["red"] = 5;
+	VERIFY(m.size() == 2);
+	VERIFY(m["red"] == 5);
+	VERIFY(m["blue"] == 9);
+}
+
+void test07()
+{
+	// 2005-10-08  Paolo Carlini  <pcarlini@suse.de>
+	typedef container::hash_map<std::string, int> Map;
+	typedef Map::iterator       iterator;
+	typedef Map::const_iterator const_iterator;
+	typedef Map::value_type     value_type;
+
+	Map m1;
+
+	iterator it1 = m1.insert(
+		value_type("all the love in the world", 1)).first;
+	VERIFY(m1.size() == 1);
+	VERIFY(*it1 == value_type("all the love in the world", 1));
+
+	const_iterator cit1(it1);
+	const_iterator cit2 = m1.insert(
+		value_type("you know what you are?", 2)).first;
+	VERIFY(m1.size() == 2);
+	VERIFY(cit2 != cit1);
+	VERIFY(*cit2 == value_type("you know what you are?", 2));
+
+	iterator it2 = m1.insert(value_type("all the love in the world", 3)).first;
+	VERIFY(m1.size() == 2);
+	VERIFY(it2 == it1);
+	VERIFY(*it2 == value_type("all the love in the world", 1));
+}
+
+void test08()
+{
+	// 2005-10-08  Paolo Carlini  <pcarlini@suse.de>
+	using std::pair;
+	using std::equal_to;
+	using std::map;
+
+	typedef pair<const char, int> my_pair;
+	typedef container::hash_map<char, int>
+		my_umap;
+
+	const char title01[] = "Rivers of sand";
+	const char title02[] = "Concret PH";
+	const char title03[] = "Sonatas and Interludes for Prepared Piano";
+	const char title04[] = "never as tired as when i'm waking up";
+
+	const size_t N1 = sizeof(title01);
+	const size_t N2 = sizeof(title02);
+	const size_t N3 = sizeof(title03);
+	const size_t N4 = sizeof(title04);
+
+	typedef map<char, int> my_map;
+	my_map map01_ref;
+	for (size_t i = 0; i < N1; ++i)
+		map01_ref.insert(my_pair(title01[i], i));
+	my_map map02_ref;
+	for (size_t i = 0; i < N2; ++i)
+		map02_ref.insert(my_pair(title02[i], i));
+	my_map map03_ref;
+	for (size_t i = 0; i < N3; ++i)
+		map03_ref.insert(my_pair(title03[i], i));
+	my_map map04_ref;
+	for (size_t i = 0; i < N4; ++i)
+		map04_ref.insert(my_pair(title04[i], i));
+
+	my_umap::size_type size01, size02;
+
+	my_umap umap01(10);
+	size01 = umap01.size();
+	my_umap umap02(10);
+	size02 = umap02.size();
+
+	umap01.swap(umap02);
+	VERIFY(umap01.size() == size02);
+	VERIFY(umap01.empty());
+	VERIFY(umap02.size() == size01);
+	VERIFY(umap02.empty());
+
+	my_umap umap03(10);
+	size01 = umap03.size();
+	my_umap umap04(map02_ref.begin(), map02_ref.end());
+	size02 = umap04.size();
+
+	umap03.swap(umap04);
+	VERIFY(umap03.size() == size02);
+	VERIFY(my_map(umap03.begin(), umap03.end()) == map02_ref);
+	VERIFY(umap04.size() == size01);
+	VERIFY(umap04.empty());
+
+	my_umap umap05(map01_ref.begin(), map01_ref.end());
+	size01 = umap05.size();
+	my_umap umap06(map02_ref.begin(), map02_ref.end());
+	size02 = umap06.size();
+
+	umap05.swap(umap06);
+	VERIFY(umap05.size() == size02);
+	VERIFY(my_map(umap05.begin(), umap05.end()) == map02_ref);
+	VERIFY(umap06.size() == size01);
+	VERIFY(my_map(umap06.begin(), umap06.end()) == map01_ref);
+
+	my_umap umap07(map01_ref.begin(), map01_ref.end());
+	size01 = umap07.size();
+	my_umap umap08(map03_ref.begin(), map03_ref.end());
+	size02 = umap08.size();
+
+	umap07.swap(umap08);
+	VERIFY(umap07.size() == size02);
+	VERIFY(my_map(umap07.begin(), umap07.end()) == map03_ref);
+	VERIFY(umap08.size() == size01);
+	VERIFY(my_map(umap08.begin(), umap08.end()) == map01_ref);
+
+	my_umap umap09(map03_ref.begin(), map03_ref.end());
+	size01 = umap09.size();
+	my_umap umap10(map04_ref.begin(), map04_ref.end());
+	size02 = umap10.size();
+
+	umap09.swap(umap10);
+	VERIFY(umap09.size() == size02);
+	VERIFY(my_map(umap09.begin(), umap09.end()) == map04_ref);
+	VERIFY(umap10.size() == size01);
+	VERIFY(my_map(umap10.begin(), umap10.end()) == map03_ref);
+
+	my_umap umap11(map04_ref.begin(), map04_ref.end());
+	size01 = umap11.size();
+	my_umap umap12(map01_ref.begin(), map01_ref.end());
+	size02 = umap12.size();
+
+	umap11.swap(umap12);
+	VERIFY(umap11.size() == size02);
+	VERIFY(my_map(umap11.begin(), umap11.end()) == map01_ref);
+	VERIFY(umap12.size() == size01);
+	VERIFY(my_map(umap12.begin(), umap12.end()) == map04_ref);
+
+	my_umap umap13(map03_ref.begin(), map03_ref.end());
+	size01 = umap13.size();
+	my_umap umap14(map03_ref.begin(), map03_ref.end());
+	size02 = umap14.size();
+
+	umap13.swap(umap14);
+	VERIFY(umap13.size() == size02);
+	VERIFY(my_map(umap13.begin(), umap13.end()) == map03_ref);
+	VERIFY(umap14.size() == size01);
+	VERIFY(my_map(umap14.begin(), umap14.end()) == map03_ref);
+}
+
+void test_typedefs()
+{
+	// 2008-08-27  Paolo Carlini  <paolo.carlini@oracle.com>
+	// Check for required typedefs
+	typedef container::hash_map<int, int>       test_type;
+
+	typedef test_type::key_type                     key_type;
+	typedef test_type::value_type                   value_type;
+	typedef test_type::mapped_type                  mapped_type;
+	typedef test_type::hasher                       hasher;
+	typedef test_type::key_equal                    key_equal;
+	//typedef test_type::allocator_type               allocator_type;  // makes little sense in open addressing
+	typedef test_type::pointer                      pointer;
+	typedef test_type::const_pointer                const_pointer;
+	typedef test_type::reference                    reference;
+	typedef test_type::const_reference              const_reference;
+	typedef test_type::size_type                    size_type;
+	typedef test_type::difference_type              difference_type;
+	typedef test_type::iterator                     iterator;
+	typedef test_type::const_iterator               const_iterator;
+	//typedef test_type::local_iterator               local_iterator;  // makes no sense in open addressing
+	//typedef test_type::const_local_iterator         const_local_iterator;
+}
+
+
+void test09()
+{
+	// 2005-10-08  Paolo Carlini  <pcarlini@suse.de>
+	// In the occasion of libstdc++/25896
+	typedef container::hash_map<std::string, int> Map;
+	typedef Map::iterator       iterator;
+	typedef Map::const_iterator const_iterator;
+	typedef Map::value_type     value_type;
+
+	Map m1;
+
+	m1.insert(value_type("because to why", 1));
+	m1.insert(value_type("the stockholm syndrome", 2));
+	m1.insert(value_type("a cereous night", 3));
+	m1.insert(value_type("eeilo", 4));
+	m1.insert(value_type("protean", 5));
+	m1.insert(value_type("the way you are when", 6));
+	m1.insert(value_type("tillsammans", 7));
+	m1.insert(value_type("umbra/penumbra", 8));
+	m1.insert(value_type("belonging (no longer mix)", 9));
+	m1.insert(value_type("one line behind", 10));
+	VERIFY(m1.size() == 10);
+
+	VERIFY(m1.erase("eeilo") == 1);
+	VERIFY(m1.size() == 9);
+	iterator it1 = m1.find("eeilo");
+	VERIFY(it1 == m1.end());
+
+	VERIFY(m1.erase("tillsammans") == 1);
+	VERIFY(m1.size() == 8);
+	iterator it2 = m1.find("tillsammans");
+	VERIFY(it2 == m1.end());
+
+	// Must work (see DR 526)
+	iterator it3 = m1.find("belonging (no longer mix)");
+	VERIFY(it3 != m1.end());
+	VERIFY(m1.erase(it3->first) == 1);
+	VERIFY(m1.size() == 7);
+	it3 = m1.find("belonging (no longer mix)");
+	VERIFY(it3 == m1.end());
+
+	VERIFY(!m1.erase("abra"));
+	VERIFY(m1.size() == 7);
+
+	VERIFY(!m1.erase("eeilo"));
+	VERIFY(m1.size() == 7);
+
+	VERIFY(m1.erase("because to why") == 1);
+	VERIFY(m1.size() == 6);
+	iterator it4 = m1.find("because to why");
+	VERIFY(it4 == m1.end());
+
+	iterator it5 = m1.find("umbra/penumbra");
+	iterator it6 = m1.find("one line behind");
+	VERIFY(it5 != m1.end());
+	VERIFY(it6 != m1.end());
+
+	VERIFY(m1.find("the stockholm syndrome") != m1.end());
+	VERIFY(m1.find("a cereous night") != m1.end());
+	VERIFY(m1.find("the way you are when") != m1.end());
+	VERIFY(m1.find("a cereous night") != m1.end());
+
+	VERIFY(m1.erase(it5->first) == 1);
+	VERIFY(m1.size() == 5);
+	it5 = m1.find("umbra/penumbra");
+	VERIFY(it5 == m1.end());
+
+	VERIFY(m1.erase(it6->first) == 1);
+	VERIFY(m1.size() == 4);
+	it6 = m1.find("one line behind");
+	VERIFY(it6 == m1.end());
+
+	iterator it7 = m1.begin();
+	iterator it8 = it7;
+	++it8;
+	iterator it9 = it8;
+	++it9;
+
+	VERIFY(m1.erase(it8->first) == 1);
+	VERIFY(m1.size() == 3);
+	VERIFY(++it7 == it9);
+
+	iterator it10 = it9;
+	++it10;
+	iterator it11 = it10;
+
+	VERIFY(m1.erase(it9->first) == 1);
+	VERIFY(m1.size() == 2);
+	VERIFY(++it10 == m1.end());
+
+	VERIFY(m1.erase(m1.begin()) != m1.end());
+	VERIFY(m1.size() == 1);
+	VERIFY(m1.begin() == it11);
+
+	VERIFY(m1.erase(m1.begin()->first) == 1);
+	VERIFY(m1.size() == 0);
+	VERIFY(m1.begin() == m1.end());
+}
+
+void test10()
+{
+	// 2005-10-08  Paolo Carlini  <pcarlini@suse.de>
+	// libstdc++/24061
+
+	typedef container::hash_map<std::string, int> Map;
+	typedef Map::iterator       iterator;
+	typedef Map::const_iterator const_iterator;
+	typedef Map::value_type     value_type;
+
+	Map m1;
+
+	m1.insert(value_type("all the love in the world", 1));
+	m1.insert(value_type("you know what you are?", 2));
+	m1.insert(value_type("the collector", 3));
+	m1.insert(value_type("the hand that feeds", 4));
+	m1.insert(value_type("love is not enough", 5));
+	m1.insert(value_type("every day is exactly the same", 6));
+	m1.insert(value_type("with teeth", 7));
+	m1.insert(value_type("only", 8));
+	m1.insert(value_type("getting smaller", 9));
+	m1.insert(value_type("sunspots", 10));
+	VERIFY(m1.size() == 10);
+
+	iterator it1 = m1.begin();
+	++it1;
+	iterator it2 = it1;
+	++it2;
+	iterator it3 = m1.erase(it1);
+	VERIFY(m1.size() == 9);
+	VERIFY(it3 == it2);
+	VERIFY(*it3 == *it2);
+
+	iterator it4 = m1.begin();
+	++it4;
+	++it4;
+	++it4;
+	iterator it5 = it4;
+	++it5;
+	++it5;
+	iterator it6 = m1.erase(it4, it5);
+	VERIFY(m1.size() == 7);
+	VERIFY(it6 == it5);
+	VERIFY(*it6 == *it5);
+
+	const_iterator it7 = m1.begin();
+	++it7;
+	++it7;
+	++it7;
+	const_iterator it8 = it7;
+	++it8;
+	const_iterator it9 = m1.erase(it7);
+	VERIFY(m1.size() == 6);
+	VERIFY(it9 == it8);
+	VERIFY(*it9 == *it8);
+
+	const_iterator it10 = m1.begin();
+	++it10;
+	const_iterator it11 = it10;
+	++it11;
+	++it11;
+	++it11;
+	++it11;
+	const_iterator it12 = m1.erase(it10, it11);
+	VERIFY(m1.size() == 2);
+	VERIFY(it12 == it11);
+	VERIFY(*it12 == *it11);
+	VERIFY(++it12 == m1.end());
+
+	iterator it13 = m1.erase(m1.begin(), m1.end());
+	VERIFY(m1.size() == 0);
+	VERIFY(it13 == it12);
+	VERIFY(it13 == m1.begin());
 }

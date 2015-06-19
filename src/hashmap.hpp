@@ -1,23 +1,39 @@
-/*** Lightness1024! ProgrammatO E.U.R.L.      ***/
-/*** 08/2014                                  ***/
-/*** © Vivien Oddou                           ***/
+/*** original authoring: Lightness1024!  ***/
+/*** Copyright V.Oddou 08/2014           ***/
 
+/*** licensing:
 
-/*
-//-----------------------------------------------------------------------
-Ce logiciel est régi par la licence CeCILL soumise au droit français et
-respectant les principes de diffusion des logiciels libres. Vous pouvez
-utiliser, modifier et/ou redistribuer ce programme sous les conditions
-de la licence CeCILL telle que diffusée par le CEA, le CNRS et l'INRIA
-sur le site "http://www.cecill.info".
+	- zlib (http://zlib.net/zlib_license.html)
 
-(...)
+		   This software is provided 'as-is', without any express or implied
+		   warranty.  In no event will the authors be held liable for any damages
+		   arising from the use of this software.
 
-Le fait que vous puissiez accéder à cet en-tête signifie que vous avez
-pris connaissance de la licence CeCILL, et que vous en avez accepté les
-termes.
-//-----------------------------------------------------------------------
-*/
+		   Permission is granted to anyone to use this software for any purpose,
+		   including commercial applications, and to alter it and redistribute it
+		   freely, subject to the following restrictions:
+
+		   1. The origin of this software must not be misrepresented; you must not
+		   claim that you wrote the original software. If you use this software
+		   in a product, an acknowledgment in the product documentation would be
+		   appreciated but is not required.
+		   2. Altered source versions must be plainly marked as such, and must not be
+		   misrepresented as being the original software.
+		   3. This notice may not be removed or altered from any source distribution.
+
+	supplementary restrictions:
+	  this code's and derivatives's license shall not be changed.
+	  (notably certainly not changed to GPL, nor BSD, nor MIT)
+	  
+	  [You might obtain a special permission to sub-license
+	   to wtfpl (http://www.wtfpl.net/), after express
+	   enquiry with the original author]
+
+	  For example, you can make it private to your organisation (closed source).
+	  but you CANNOT redistribute variations under BSD, GPL, MIT or any other.
+	  Variations of this code CANNOT be made public domain until the full legal
+	  time lapse is expired for public domain automatic categorization decay.
+	***/
 
 // the behavior of this map is very largely based on C++11 unordered_map
 
@@ -29,10 +45,55 @@ termes.
 #include <new>
 #include <tuple>
 #include <vector>
+#include <type_traits>
+#include <cstddef>
 #include "pool.hpp"
+
+#ifndef _countof
+# define _countof(a) (sizeof(a) / sizeof(a[0]))
+# define do_undef_countof_at_file_end
+#endif
 
 namespace container
 {
+	enum class buckstate : uint8_t { empty, occupied, deleted };
+
+	struct buckets_state
+	{
+		void resize(size_t n)
+		{
+			occupancy.resize(n * 2, false);  // set all at 'empty' for starters.
+		}
+
+		buckstate get_at(size_t i) const
+		{
+			uint8_t lsb = occupancy[i * 2] ? 1 : 0;
+			uint8_t msb = occupancy[i * 2 + 1] ? 1 : 0;
+			uint8_t ibs = lsb | (msb << 1);
+			_ASSERT(ibs <= 2);  // 3 is impossible.
+			return buckstate(ibs);
+		}
+
+		void set_at(size_t i, buckstate bs)
+		{
+			uint8_t ibs = uint8_t(bs);
+			_ASSERT(ibs <= 2);
+			uint8_t lsb = ibs & 1;
+			uint8_t msb = (ibs >> 1) & 1;
+			occupancy[i * 2] = lsb;
+			occupancy[i * 2 + 1] = msb;
+		}
+
+		size_t size() const { return occupancy.size() / 2; }
+
+		void swap(buckets_state& rhs)
+		{
+			occupancy.swap(rhs.occupancy);
+		}
+	private:
+		std::vector< bool > occupancy;  // store state (3 states) on 2 adjacent bits.
+	};
+
 	template< typename MapValueType >
 	struct map_buckets
 	{
@@ -48,24 +109,24 @@ namespace container
 			size_t lim = array.size();
 			for ( ; i != lim; ++i)
 			{
-				if (occupancy[i])
+				if (occup.get_at(i) == buckstate::occupied)
 					array[i].~value_type();
 			}
 		}
 
-		std::vector< bool >		occupancy;
-		pool< value_type >		array;
+		buckets_state		occup;
+		pool< value_type >	array;
 
 		void resize(size_t n)
 		{
 			_ASSERT(array.size() == 0);  // cannot really resize. just set from 0.
 			array.resize(n);
-			occupancy.resize(n, false);
+			occup.resize(n);
 		}
 
 		void swap(map_buckets& r)
 		{
-			occupancy.swap(r.occupancy);
+			occup.swap(r.occup);
 			array.swap(r.array);
 		}
 	};
@@ -105,8 +166,10 @@ namespace container
 		pair_type&			operator*  () const;
 		hash_map_iterator&	operator++ ();  // prefix
 		hash_map_iterator	operator++ (int);  // postfix
-		bool				operator== (hash_map_iterator const& rhs) const;
-		bool				operator!= (hash_map_iterator const& rhs) const;
+		template< typename PairT, typename SRCPairT >
+		bool				operator== (hash_map_iterator<PairT, SRCPairT> const& rhs) const;
+		template< typename PairT, typename SRCPairT >
+		bool				operator!= (hash_map_iterator<PairT, SRCPairT> const& rhs) const;
 		hash_map_iterator&	operator = (hash_map_iterator const& rhs);
 
 		template< typename Ob, typename NCPT >
@@ -170,7 +233,7 @@ namespace container
 		auto baseaddr = &buckets_ref->array[0];
 		auto limit = baseaddr + buckets_ref->array.size();
 		++current;
-		while (current < (pair_type*)limit && !buckets_ref->occupancy[current - (pair_type*)baseaddr])
+		while (current < (pair_type*)limit && buckets_ref->occup.get_at(current - (pair_type*)baseaddr) != buckstate::occupied)
 			++current;
 		return *this;
 	}
@@ -182,15 +245,20 @@ namespace container
 		++(*this);
 		return it;
 	}
-
+	
 	ITER_TPL_DECL
-	bool ITER_DECL::operator== (hash_map_iterator const& rhs) const
+	template< typename PairT, typename SRCPairT >
+	bool ITER_DECL::operator== (hash_map_iterator<PairT, SRCPairT> const& rhs) const
 	{
+		static_assert(std::is_same< SRCPairT, SourcePairType>::value, "can only compare equivalent iterator types");
+		static_assert(std::is_same< typename std::remove_const< PairT >::type,
+									typename std::remove_const< pair_type >::type >::value, "can only compare equivalent iterator types");
 		return current == rhs.current && buckets_ref == rhs.buckets_ref;
 	}
 
 	ITER_TPL_DECL
-	bool ITER_DECL::operator!= (hash_map_iterator const& rhs) const
+	template< typename PairT, typename SRCPairT >
+	bool ITER_DECL::operator!= (hash_map_iterator<PairT, SRCPairT> const& rhs) const
 	{
 		return !(*this == rhs);
 	}
@@ -212,7 +280,22 @@ namespace container
 		{
 			static size_t const primes[] = {13, 29, 47, 73, 131, 257, 503, 1021,
 											2039, 4093, 7919, 16333, 32749,
-											47143, 65293, 96487, 150559, 199967 };
+											47143, 65293, 96487, 150559, 199967,
+											275669, 383923, 456623, 573379, 702607,
+											1061189, 1560781, 2408239,
+											3844097, 5760427, 8550413};
+		}
+
+		// purpose of this, is when we overshot the primes[] table,
+		// we use "n * 3/2 * 1.1113" as a growth factor. then round to nearest size_t.
+		// so this function exists to improve a bit on the risk of having bad bucket sizes.
+		inline size_t improve_primeness(size_t val)
+		{
+			if (val > 5 && (val % 5 == 0))  // if divisible by 5, make end by 7. exept 5, no prime number ends in a 5.
+				val += 2;
+			if ((val & 1) != 0)  // if even, make odd.
+				++val;
+			return val;
 		}
 	}
 
@@ -224,7 +307,7 @@ namespace container
 		auto end = beg + cnt;
 		auto it = std::upper_bound(beg, end, contenance);
 		if (it == end)
-			return (size_t)(minbuckets * 1.1113f);
+			return detail::improve_primeness((size_t)(minbuckets * 1.1113f));
 		return *it;
 	}
 
@@ -240,22 +323,25 @@ namespace container
 	public:
 		// all the standard typedefs (minus allocator):
 		typedef std::pair< const Key, MappedValue > value_type;
-		typedef std::pair< const Key, const MappedValue > const allconst_pair;
+		typedef value_type const					const_value_type;
 		typedef Key				key_type;		// the first template parameter(Key)
-		typedef MappedValue		mapped_type;	// the second template parameter(MappedValue)
+		typedef MappedValue		mapped_type;		// the second template parameter(MappedValue)
 		typedef HashFunc		hasher;			// the third template parameter(HashFunc)	defaults to : std::hash<key_type>
 		typedef EqualFunc		key_equal;		// the fourth template parameter(Pred)	defaults to : std::equal_to<key_type>
 		typedef value_type&		reference;
-		typedef reference const& const_reference;
+		typedef value_type const& const_reference;
 		typedef value_type*		pointer;
-		typedef pointer const	const_pointer;
-		typedef hash_map_iterator<value_type,    value_type>  iterator;
-		typedef hash_map_iterator<allconst_pair, value_type>  const_iterator;
+		typedef value_type const*	const_pointer;
+		typedef hash_map_iterator<value_type,    value_type>		iterator;
+		typedef hash_map_iterator<const_value_type, value_type>		const_iterator;
 		typedef size_t			size_type;
 		typedef ptrdiff_t		difference_type;
 
-		hash_map();
-		hash_map(hash_map const& copyfrom);
+							hash_map();
+							hash_map(size_type min_num_of_init_buckets);
+							hash_map(hash_map const& copyfrom);
+		template <class InputIterator>
+							hash_map(InputIterator first, InputIterator last);
 
 		hash_map&			operator = (hash_map const& assignfrom);
 		void				copy(hash_map const& assignfrom);
@@ -266,18 +352,21 @@ namespace container
 		mapped_type const&	operator [] (key_type const& key) const;
 		mapped_type&		at(const key_type& k);
 		mapped_type const&	at(const key_type& k) const;
-		std::pair<bool, iterator> insert(key_type const& key, mapped_type const& mapped_value);
-		std::pair<bool, iterator> insert(const_reference value);
+		std::pair<iterator, bool> insert(key_type const& key, mapped_type const& mapped_value);
+		std::pair<iterator, bool> insert(const_reference value);
+		template <class InputIterator>
+		void					  insert(InputIterator first, InputIterator last);  //!< range insert.
 		// emplace 0
-		std::pair<bool, iterator> emplace(key_type const& key);
+		std::pair<iterator, bool> emplace(key_type const& key);
 		iterator                  emplace_pos(size_type pos, key_type const& key);
 		// emplace 1
 		template< typename MappedTypeCompatType >
-		std::pair<bool, iterator> emplace(key_type const& key, MappedTypeCompatType const& mappedconstruct);
+		std::pair<iterator, bool> emplace(key_type const& key, MappedTypeCompatType const& mappedconstruct);
 		template< typename MappedTypeCompatType >
 		iterator            emplace_pos(size_type pos, key_type const& key, MappedTypeCompatType const& mappedconstruct);
 		iterator			erase(const_iterator position);
 		size_type			erase(key_type const& k);
+		iterator			erase(const_iterator first, const_iterator last);
 		bool				has_key(key_type const& tosearch) const;
 		void				clear();
 		void				swap(hash_map& rhs);
@@ -300,14 +389,15 @@ namespace container
 		enum found_status { vacant, found, notfound, full_notfound, unset };
 		found_status determine_found_status(size_t at, key_type const& k) const;
 		std::pair<found_status, size_t> find_placement(key_type const& k) const;
-		size_t find_next_occupied(size_t from) const;
+		size_t find_next_occupied(size_t from_incl) const;   //< if from_incl is occupied it returns from_incl.
+		size_t increment_modulo_bucket_size(size_t value) const;
 
 		size_type count;
 		map_buckets<value_type> buckets;
 		hasher hash_fn;
 		key_equal eq_fn;
 #ifdef _DEBUG
-		value_type* _dbgbuckets;
+		value_type* _dbgbuckets;  // help vizu in watch
 #endif
 	};
 
@@ -333,10 +423,25 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	{}
 
 	HASHMAP_TPL_DECL
+	HASHMAP_DECL::hash_map(size_type min_num_of_init_buckets)
+		: count(0)
+	{
+		rehash(min_num_of_init_buckets);
+	}
+
+	HASHMAP_TPL_DECL
 	HASHMAP_DECL::hash_map(hash_map const& copyfrom)
 		: count(0)
 	{
 		copy(copyfrom);
+	}
+
+	HASHMAP_TPL_DECL
+	template <class InputIterator>
+	HASHMAP_DECL::hash_map(InputIterator first, InputIterator last)
+		: count(0)
+	{
+		insert(first, last);
 	}
 
 	HASHMAP_TPL_DECL
@@ -354,19 +459,23 @@ inline size_t increment_modulo(size_t value, size_t limit)
 		auto end = assignfrom.cend();
 		for (; it != end; ++it)
 		{
-			bool did = emplace(it->first, it->second).first;
-			if (did)
-				++count;
+			emplace(it->first, it->second).second;
 		}
+	}
+
+	HASHMAP_TPL_DECL
+	size_t HASHMAP_DECL::increment_modulo_bucket_size(size_t value) const
+	{
+		return increment_modulo(value, buckets.array.size());
 	}
 
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::found_status HASHMAP_DECL::determine_found_status(size_t at, key_type const& k) const
 	{
 		found_status st = notfound;
-		if (buckets.occupancy.size() == 0)
+		if (buckets.occup.size() == 0)
 			return full_notfound;
-		bool occupied = buckets.occupancy[at];
+		bool occupied = buckets.occup.get_at(at) == buckstate::occupied;
 		bool keyequal = occupied ? eq_fn(k, buckets.array[at].first) : false;
 		if (keyequal)
 			st = found;
@@ -399,12 +508,12 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	}
 
 	HASHMAP_TPL_DECL
-	size_t HASHMAP_DECL::find_next_occupied(size_t from) const
+	size_t HASHMAP_DECL::find_next_occupied(size_t from_incl) const
 	{
 		size_t lim = buckets.array.size();
-		size_t nextvalid = increment_modulo(from, lim);
+		size_t nextvalid = from_incl;
 		size_t loop = 1;
-		while (loop < lim && !buckets.occupancy[nextvalid])
+		while (loop < lim && buckets.occup.get_at(nextvalid) != buckstate::occupied)
 		{
 			nextvalid = increment_modulo(nextvalid, lim);
 			++loop;
@@ -465,29 +574,36 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	}
 
 	HASHMAP_TPL_DECL
-	std::pair<bool, typename HASHMAP_DECL::iterator> HASHMAP_DECL::insert(key_type const& key, mapped_type const& mapped_value)
+	std::pair<typename HASHMAP_DECL::iterator, bool> HASHMAP_DECL::insert(key_type const& key, mapped_type const& mapped_value)
 	{
 		return emplace(key, mapped_value);
 	}
 
 	HASHMAP_TPL_DECL
-	std::pair<bool, typename HASHMAP_DECL::iterator> HASHMAP_DECL::insert(const_reference value)
+	std::pair<typename HASHMAP_DECL::iterator, bool> HASHMAP_DECL::insert(const_reference value)
 	{
 		return emplace(value.first, value.second);
 	}
 
 	HASHMAP_TPL_DECL
-	std::pair<bool, typename HASHMAP_DECL::iterator> HASHMAP_DECL::emplace(key_type const& key)
+	template <class InputIterator>
+	void HASHMAP_DECL::insert(InputIterator first, InputIterator last)
+	{
+		std::for_each(first, last, [&](decltype(*first)& p){ insert(p); });
+	}
+
+	HASHMAP_TPL_DECL
+	std::pair<typename HASHMAP_DECL::iterator, bool> HASHMAP_DECL::emplace(key_type const& key)
 	{
 		return emplace(key, mapped_type());
 	}
 
 	HASHMAP_TPL_DECL
 	template< typename MappedTypeCompatType >
-	std::pair<bool, typename HASHMAP_DECL::iterator> HASHMAP_DECL::emplace(key_type const& key, MappedTypeCompatType const& mappedconstruct)
+	std::pair<typename HASHMAP_DECL::iterator, bool> HASHMAP_DECL::emplace(key_type const& key, MappedTypeCompatType const& mappedconstruct)
 	{
 		auto stat_pos = find_placement(key);
-		return std::make_pair(stat_pos.first == found, emplace_pos(stat_pos.second, key, mappedconstruct));
+		return std::make_pair(emplace_pos(stat_pos.second, key, mappedconstruct), stat_pos.first != found);
 	}
 
 	HASHMAP_TPL_DECL
@@ -507,8 +623,7 @@ inline size_t increment_modulo(size_t value, size_t limit)
 		}
 		if (status == found)
 		{
-			// overwrite value.
-			buckets.array[pos].second = mappedconstruct;
+			// don't overwrite value if already inserted. (c.f. http://www.cplusplus.com/reference/unordered_map/unordered_map/insert/)
 			return iterator(&buckets, pos);
 		}
 		else
@@ -519,9 +634,9 @@ inline size_t increment_modulo(size_t value, size_t limit)
 				std::tie(status, pos) = find_placement(key);
 				_ASSERT(status == vacant);
 			}
-			_ASSERT(!buckets.occupancy[pos]);
-			new (&buckets.array[pos]) value_type(key, mappedconstruct);
-			buckets.occupancy[pos] = true;
+			_ASSERT(buckets.occup.get_at(pos) != buckstate::occupied);
+			new (&buckets.array[pos]) value_type(key, mappedconstruct);  // call 1 arg constructor
+			buckets.occup.set_at(pos, buckstate::occupied);
 			++count;
 			return iterator(&buckets, pos);
 		}
@@ -531,11 +646,11 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	typename HASHMAP_DECL::iterator HASHMAP_DECL::erase(const_iterator position)
 	{
 		size_t pos = (value_type*)&(*position) - &buckets.array[0];
-		_ASSERT(buckets.occupancy[pos]);
+		_ASSERT(buckets.occup.get_at(pos) == buckstate::occupied);
 		buckets.array[pos].~value_type();
-		buckets.occupancy[pos] = false;
+		buckets.occup.set_at(pos, buckstate::deleted);
 		--count;
-		pos = find_next_occupied(pos);
+		pos = find_next_occupied(increment_modulo_bucket_size(pos));
 		return iterator(&buckets, pos);
 	}
 
@@ -549,6 +664,17 @@ inline size_t increment_modulo(size_t value, size_t limit)
 			return 1;
 		}
 		return 0;
+	}
+
+	HASHMAP_TPL_DECL
+	typename HASHMAP_DECL::iterator HASHMAP_DECL::erase(const_iterator first, const_iterator last)
+	{
+		size_t firstpos = (value_type*)&(*first) - &buckets.array[0];
+		_ASSERT(buckets.occup.get_at(firstpos) == buckstate::occupied);
+		auto it = iterator(&buckets, firstpos);
+		while (it != last && it != end())
+			it = erase(it);
+		return it;
 	}
 
 	HASHMAP_TPL_DECL
@@ -614,7 +740,7 @@ inline size_t increment_modulo(size_t value, size_t limit)
 			size_t lim = old_buckets.array.size();
 			while (it != lim)
 			{
-				if (old_buckets.occupancy[it])
+				if (old_buckets.occup.get_at(it) == buckstate::occupied)
 					emplace(old_buckets.array[it].first, old_buckets.array[it].second);
 				++it;
 			}
@@ -670,19 +796,23 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	typename HASHMAP_DECL::iterator HASHMAP_DECL::find(key_type const& k)
 	{
 		auto sttpos = find_placement(k);
-		return iterator(&buckets, sttpos.first == found ? sttpos.pos : buckets.array.size());
+		return iterator(&buckets, sttpos.first == found ? sttpos.second : buckets.array.size());
 	}
 
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::const_iterator HASHMAP_DECL::find(key_type const& k) const
 	{
 		auto sttpos = find_placement(k);
-		return const_iterator(&buckets, sttpos.first == found ? sttpos.pos : buckets.array.size());
+		return const_iterator(&buckets, sttpos.first == found ? sttpos.second : buckets.array.size());
 	}
 
 #undef HASHMAP_TPL_DECL
 #undef HASHMAP_DECL
 
 }
+
+#ifdef do_undef_countof_at_file_end
+# undef _countof
+#endif
 
 #endif
