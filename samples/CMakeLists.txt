@@ -1,4 +1,5 @@
 cmake_minimum_required (VERSION 2.6)
 project (oahm)
+add_definitions(-std=c++11 -DNDEBUG -O0)
 include_directories("${PROJECT_BINARY_DIR}/../src")
 add_executable(oahm example.cpp)

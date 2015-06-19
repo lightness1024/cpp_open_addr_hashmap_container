@@ -303,7 +303,7 @@ int main()
 		auto start = high_res_get_now();
 
 		container::hash_map<int, int> mymap;
-		mymap.reserve(50000);  // weird. this was the only value that worked well
+		mymap.reserve(1000000);   // 50000);  // weird. this was the only value that worked well
 		for (int i = 0; i < 1000000; ++i)
 			mymap[rand()] = rand();
 
