@@ -387,8 +387,9 @@ namespace container
 
 	private:
 		enum found_status { vacant, found, notfound, full_notfound, unset };
-		found_status determine_found_status(size_t at, key_type const& k) const;
-		std::pair<found_status, size_t> find_placement(key_type const& k) const;
+		enum class purpose { find, place };
+		found_status determine_found_status(size_t at, key_type const& k, purpose p) const;
+		std::pair<found_status, size_t> find_placement(key_type const& k, purpose p) const;
 		size_t find_next_occupied(size_t from_incl) const;   //< if from_incl is occupied it returns from_incl.
 		size_t increment_modulo_bucket_size(size_t value) const;
 
@@ -468,9 +469,9 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	{
 		return increment_modulo(value, buckets.array.size());
 	}
-
+	
 	HASHMAP_TPL_DECL
-	typename HASHMAP_DECL::found_status HASHMAP_DECL::determine_found_status(size_t at, key_type const& k) const
+	typename HASHMAP_DECL::found_status HASHMAP_DECL::determine_found_status(size_t at, key_type const& k, purpose p) const
 	{
 		found_status st = notfound;
 		if (buckets.occup.size() == 0)
@@ -480,25 +481,25 @@ inline size_t increment_modulo(size_t value, size_t limit)
 		if (keyequal)
 			st = found;
 		else if (!occupied)
-			st = vacant;
+			st = buckets.occup.get_at(at) == buckstate::empty || p == purpose::place ? vacant : notfound;
 		return st;
 	}
-
+	
 	HASHMAP_TPL_DECL
-	std::pair<typename HASHMAP_DECL::found_status, size_t> HASHMAP_DECL::find_placement(key_type const& k) const
+	std::pair<typename HASHMAP_DECL::found_status, size_t> HASHMAP_DECL::find_placement(key_type const& k, purpose p) const
 	{
 		size_t const limit   = buckets.array.size();
 		if (limit == 0)
 			return std::make_pair(full_notfound, 0);
 		size_t const h       = hash_fn(k);
 		size_t       pos     = h % limit;
-		found_status status  = determine_found_status(pos, k);
+		found_status status  = determine_found_status(pos, k, p);
 		size_t       loopcnt = 0;
 		while (status == notfound && loopcnt < limit)
 		{
 			// check next (linear probing):
 			pos = increment_modulo(pos, limit);
-			status = determine_found_status(pos, k);
+			status = determine_found_status(pos, k, p);
 			++loopcnt;
 		}
 		if (status == notfound && loopcnt == limit)
@@ -512,7 +513,7 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	{
 		size_t lim = buckets.array.size();
 		size_t nextvalid = from_incl;
-		size_t loop = 1;
+		size_t loop = 0;
 		while (loop < lim && buckets.occup.get_at(nextvalid) != buckstate::occupied)
 		{
 			nextvalid = increment_modulo(nextvalid, lim);
@@ -538,7 +539,7 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::mapped_type& HASHMAP_DECL::operator [] (key_type const& key)
 	{
-		auto stat_pos = find_placement(key);
+		auto stat_pos = find_placement(key, purpose::find);
 		if (stat_pos.first != found)  // need to insert if not found. (operator [] 's responsibility)
 		{
 			auto res = emplace_pos(stat_pos.second, key);
@@ -564,7 +565,7 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::mapped_type const& HASHMAP_DECL::at(const key_type& key) const
 	{
-		auto stat_pos = find_placement(key);
+		auto stat_pos = find_placement(key, purpose::find);
 		if (stat_pos.first != found)
 		{
 			throw std::out_of_range("try to access a non existing element");
@@ -602,7 +603,7 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	template< typename MappedTypeCompatType >
 	std::pair<typename HASHMAP_DECL::iterator, bool> HASHMAP_DECL::emplace(key_type const& key, MappedTypeCompatType const& mappedconstruct)
 	{
-		auto stat_pos = find_placement(key);
+		auto stat_pos = find_placement(key, purpose::place);
 		return std::make_pair(emplace_pos(stat_pos.second, key, mappedconstruct), stat_pos.first != found);
 	}
 
@@ -616,10 +617,10 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	template< typename MappedTypeCompatType >
 	typename HASHMAP_DECL::iterator HASHMAP_DECL::emplace_pos(size_type pos, key_type const& key, MappedTypeCompatType const& mappedconstruct)
 	{
-		found_status status = determine_found_status(pos, key);  // check the pos hint
+		found_status status = determine_found_status(pos, key, purpose::place);  // check the pos hint
 		if (status == notfound)
 		{  // it was a bad hint
-			std::tie(status, pos) = find_placement(key);
+			std::tie(status, pos) = find_placement(key, purpose::place);
 		}
 		if (status == found)
 		{
@@ -631,7 +632,7 @@ inline size_t increment_modulo(size_t value, size_t limit)
 			if (float(count + 1) / max_load_factor() >= buckets.array.size())  // not enough space to guarantee a correct load factor
 			{
 				rehash(next_advised_bucket_count(count < 30000 ? (count + 1) * 2 : count * 3 / 2, max_load_factor()));
-				std::tie(status, pos) = find_placement(key);
+				std::tie(status, pos) = find_placement(key, purpose::place);
 				_ASSERT(status == vacant);
 			}
 			_ASSERT(buckets.occup.get_at(pos) != buckstate::occupied);
@@ -657,7 +658,7 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::size_type HASHMAP_DECL::erase(key_type const& key)
 	{
-		auto stat_pos = find_placement(key);
+		auto stat_pos = find_placement(key, purpose::find);
 		if (stat_pos.first == found)
 		{
 			erase(const_iterator(&buckets, stat_pos.second));
@@ -680,7 +681,7 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	bool HASHMAP_DECL::has_key(key_type const& tosearch) const
 	{
-		auto st = find_placement(tosearch);
+		auto st = find_placement(tosearch, purpose::find);
 		return st.first == found;
 	}
 
@@ -795,14 +796,14 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::iterator HASHMAP_DECL::find(key_type const& k)
 	{
-		auto sttpos = find_placement(k);
+		auto sttpos = find_placement(k, purpose::find);
 		return iterator(&buckets, sttpos.first == found ? sttpos.second : buckets.array.size());
 	}
 
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::const_iterator HASHMAP_DECL::find(key_type const& k) const
 	{
-		auto sttpos = find_placement(k);
+		auto sttpos = find_placement(k, purpose::find);
 		return const_iterator(&buckets, sttpos.first == found ? sttpos.second : buckets.array.size());
 	}
 
