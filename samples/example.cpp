@@ -478,6 +478,75 @@ int main()
 
 		std::cout << "std map: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
 	}
+	
+	std::cout << "\n== 50k random finds among 1M contenance ==" << std::endl;
+
+	{
+		srand(0);
+
+		container::hash_map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto start = high_res_get_now();
+		
+		size_t founds = 0;
+		for (int i = 0; i < 50000; ++i)
+			founds += mymap.find(rand()) != mymap.end();
+
+		auto end = high_res_get_now();
+
+		sideeffect(mymap.begin()->second);
+		sideeffect(founds);
+
+		auto diff = end - start;
+
+		std::cout << "*openaddr: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	{
+		srand(0);
+		std::unordered_map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto start = high_res_get_now();
+
+		size_t founds = 0;
+		for (int i = 0; i < 50000; ++i)
+			founds += mymap.find(rand()) != mymap.end();
+
+		auto end = high_res_get_now();
+
+		sideeffect(mymap.begin()->second);
+		sideeffect(founds);
+
+		auto diff = end - start;
+
+		std::cout << "std unordered: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+
+	{
+		srand(0);
+		std::map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[rand()] = rand();
+
+		auto start = high_res_get_now();
+
+		size_t founds = 0;
+		for (int i = 0; i < 50000; ++i)
+			founds += mymap.find(rand()) != mymap.end();
+
+		auto end = high_res_get_now();
+
+		sideeffect(mymap.begin()->second);
+		sideeffect(founds);
+
+		auto diff = end - start;
+
+		std::cout << "std map: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}	
 #endif
 }
 

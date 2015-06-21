@@ -1,5 +1,6 @@
 /*** original authoring: Lightness1024!  ***/
 /*** Copyright V.Oddou 08/2014           ***/
+/*** lightness1024 -at- free -dot- fr    ***/
 
 /*** licensing:
 
@@ -30,12 +31,13 @@
 	   enquiry with the original author]
 
 	  For example, you can make it private to your organisation (closed source).
-	  but you CANNOT redistribute variations under BSD, GPL, MIT or any other.
+	  but you CANNOT redistribute variations under BSD, GPL, MIT or any other that is not zlib.
 	  Variations of this code CANNOT be made public domain until the full legal
 	  time lapse is expired for public domain automatic categorization decay.
-	***/
+***/
 
 // the behavior of this map is very largely based on C++11 unordered_map
+// http://www.cplusplus.com/reference/unordered_map/unordered_map/
 
 
 #ifndef HASHMAP_SERHUM_INCLUDEGUARD_L1024_82014
@@ -47,6 +49,7 @@
 #include <vector>
 #include <type_traits>
 #include <cstddef>
+#include <cstdint>
 #include "pool.hpp"
 
 #ifndef _countof
@@ -62,7 +65,12 @@ namespace container
 	{
 		void resize(size_t n)
 		{
-			occupancy.resize(n * 2, false);  // set all at 'empty' for starters.
+			occupancy.resize(n * 2);
+		}
+
+		bool is_all_false()
+		{
+			return std::find(occupancy.begin(), occupancy.end(), true) == occupancy.end();
 		}
 
 		buckstate get_at(size_t i) const
@@ -80,8 +88,8 @@ namespace container
 			_ASSERT(ibs <= 2);
 			uint8_t lsb = ibs & 1;
 			uint8_t msb = (ibs >> 1) & 1;
-			occupancy[i * 2] = lsb;
-			occupancy[i * 2 + 1] = msb;
+			occupancy[i * 2] = lsb != 0;
+			occupancy[i * 2 + 1] = msb != 0;
 		}
 
 		size_t size() const { return occupancy.size() / 2; }
@@ -122,6 +130,11 @@ namespace container
 			_ASSERT(array.size() == 0);  // cannot really resize. just set from 0.
 			array.resize(n);
 			occup.resize(n);
+		}
+
+		bool all_occupancy_is_empty()
+		{
+			return occup.is_all_false();
 		}
 
 		void swap(map_buckets& r)
@@ -590,7 +603,7 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	template <class InputIterator>
 	void HASHMAP_DECL::insert(InputIterator first, InputIterator last)
 	{
-		std::for_each(first, last, [&](decltype(*first)& p){ insert(p); });
+		std::for_each(first, last, [&](decltype(*first)& p){ insert(p); }); // C++11 style. C++14 would be 'auto&'.
 	}
 
 	HASHMAP_TPL_DECL
@@ -619,16 +632,17 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	{
 		found_status status = determine_found_status(pos, key, purpose::place);  // check the pos hint
 		if (status == notfound)
-		{  // it was a bad hint
+		{	// it was a bad hint
 			std::tie(status, pos) = find_placement(key, purpose::place);
 		}
+
 		if (status == found)
-		{
-			// don't overwrite value if already inserted. (c.f. http://www.cplusplus.com/reference/unordered_map/unordered_map/insert/)
+		{	// don't overwrite value if already inserted.
 			return iterator(&buckets, pos);
 		}
 		else
-		{
+		{   _ASSERT(status == vacant || status == full_notfound);
+
 			if (float(count + 1) / max_load_factor() >= buckets.array.size())  // not enough space to guarantee a correct load factor
 			{
 				rehash(next_advised_bucket_count(count < 30000 ? (count + 1) * 2 : count * 3 / 2, max_load_factor()));
@@ -736,6 +750,7 @@ inline size_t increment_modulo(size_t value, size_t limit)
 			count = 0;
 			// set new size:
 			buckets.resize(n);
+			_ASSERT(buckets.all_occupancy_is_empty());
 			// iterate over old buckets and re-insert everything:
 			size_t it = 0;
 			size_t lim = old_buckets.array.size();
