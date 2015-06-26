@@ -22,6 +22,59 @@
 
 #define VERIFY(a) _ASSERT(a)
 
+#define COUNT_ALLOCATIONS
+
+#ifdef COUNT_ALLOCATIONS
+
+static size_t g_counter;
+
+void* operator new  (std::size_t count)
+{
+	++g_counter;
+	return std::malloc(count);
+}
+
+void* operator new[](std::size_t count)
+{
+	++g_counter;
+	return std::malloc(count);
+}
+
+void* operator new  (std::size_t count, const std::nothrow_t& tag)
+{
+	++g_counter;
+	return std::malloc(count);
+}
+
+void* operator new[](std::size_t count, const std::nothrow_t& tag)
+{
+	++g_counter;
+	return std::malloc(count);
+}
+
+static size_t s_cnt;
+
+inline void mark_alloc_counter_start()
+{
+	s_cnt = g_counter;
+}
+
+inline size_t get_alloc_cnt_difference_since_mark()
+{
+	return g_counter - s_cnt;
+}
+#else
+
+inline void mark_alloc_counter_start()
+{}
+
+inline size_t get_alloc_cnt_difference_since_mark()
+{
+	return 0;
+}
+
+#endif
+
 int gcnt = 0;
 struct NeedCopy
 {
@@ -256,6 +309,10 @@ int main()
 		srand(0);
 		auto start = high_res_get_now();
 
+#ifdef COUNT_ALLOCATIONS
+		mark_alloc_counter_start();
+#endif
+
 		std::vector<int> mymap;
 		for (int i = 0; i < 1000000; ++i)
 			mymap.push_back(rand());
@@ -265,11 +322,18 @@ int main()
 		auto diff = end - start;
 
 		std::cout << "std vector: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+#ifdef COUNT_ALLOCATIONS
+		std::cout << "\t\tmem blocks: " << get_alloc_cnt_difference_since_mark() << std::endl;
+#endif
 	}
 
 	{
 		srand(0);
 		auto start = high_res_get_now();
+
+#ifdef COUNT_ALLOCATIONS
+		mark_alloc_counter_start();
+#endif
 
 		std::vector<int> mymap;
 		mymap.reserve(1000000);
@@ -281,11 +345,17 @@ int main()
 		auto diff = end - start;
 
 		std::cout << "reserved vector: \t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+#ifdef COUNT_ALLOCATIONS
+		std::cout << "\t\tmem blocks: " << get_alloc_cnt_difference_since_mark() << std::endl;
+#endif
 	}
 
 	{
 		srand(0);
 		auto start = high_res_get_now();
+#ifdef COUNT_ALLOCATIONS
+		mark_alloc_counter_start();
+#endif
 
 		container::hash_map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
@@ -296,11 +366,17 @@ int main()
 		auto diff = end - start;
 
 		std::cout << "*open address: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+#ifdef COUNT_ALLOCATIONS
+		std::cout << "\t\tmem blocks: " << get_alloc_cnt_difference_since_mark() << std::endl;
+#endif
 	}
 
 	{
 		srand(0);
 		auto start = high_res_get_now();
+#ifdef COUNT_ALLOCATIONS
+		mark_alloc_counter_start();
+#endif
 
 		container::hash_map<int, int> mymap;
 		mymap.reserve(1000000);   // 50000);  // weird. this was the only value that worked well
@@ -312,11 +388,17 @@ int main()
 		auto diff = end - start;
 
 		std::cout << "*reserved openaddr: \t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+#ifdef COUNT_ALLOCATIONS
+		std::cout << "\t\tmem blocks: " << get_alloc_cnt_difference_since_mark() << std::endl;
+#endif
 	}
 
 	{
 		srand(0);
 		auto start = high_res_get_now();
+#ifdef COUNT_ALLOCATIONS
+		mark_alloc_counter_start();
+#endif
 
 		std::unordered_map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
@@ -327,11 +409,17 @@ int main()
 		auto diff = end - start;
 
 		std::cout << "std unordered: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+#ifdef COUNT_ALLOCATIONS
+		std::cout << "\t\tmem blocks: " << get_alloc_cnt_difference_since_mark() << std::endl;
+#endif
 	}
 
 	{
 		srand(0);
 		auto start = high_res_get_now();
+#ifdef COUNT_ALLOCATIONS
+		mark_alloc_counter_start();
+#endif
 
 		std::map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
@@ -342,6 +430,9 @@ int main()
 		auto diff = end - start;
 
 		std::cout << "std map: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+#ifdef COUNT_ALLOCATIONS
+		std::cout << "\t\tmem blocks: " << get_alloc_cnt_difference_since_mark() << std::endl;
+#endif
 	}
 
 	std::cout << "\n== 100k random erasures ==" << std::endl;
