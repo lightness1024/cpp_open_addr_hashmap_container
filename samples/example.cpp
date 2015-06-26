@@ -22,7 +22,21 @@
 
 #define VERIFY(a) _ASSERT(a)
 
-#define COUNT_ALLOCATIONS
+//#define COUNT_ALLOCATIONS
+
+static unsigned long next = 1;
+
+int myrand(void)
+{
+    next = next * 1103515245 + 12345;
+    return((unsigned)(next/65536) % 32768);
+}
+
+void mysrand(unsigned seed)
+{
+    next = seed;
+}
+
 
 #ifdef COUNT_ALLOCATIONS
 
@@ -230,7 +244,7 @@ int main()
 	 {  // heavy load test.
 		 container::hash_map<int, int> mymap;
 		 for (int i = 0; i < 1000000; ++i)
-			 mymap[rand()] = rand();
+			 mymap[myrand()] = myrand();
 	 }
 
 	 {
@@ -306,7 +320,7 @@ int main()
 	std::cout << "== 1 million int pushes ==" << std::endl;
 
 	{
-		srand(0);
+		mysrand(0);
 		auto start = high_res_get_now();
 
 #ifdef COUNT_ALLOCATIONS
@@ -315,7 +329,7 @@ int main()
 
 		std::vector<int> mymap;
 		for (int i = 0; i < 1000000; ++i)
-			mymap.push_back(rand());
+			mymap.push_back(myrand());
 
 		auto end = high_res_get_now();
 
@@ -328,7 +342,7 @@ int main()
 	}
 
 	{
-		srand(0);
+		mysrand(0);
 		auto start = high_res_get_now();
 
 #ifdef COUNT_ALLOCATIONS
@@ -338,7 +352,7 @@ int main()
 		std::vector<int> mymap;
 		mymap.reserve(1000000);
 		for (int i = 0; i < 1000000; ++i)
-			mymap.push_back(rand());
+			mymap.push_back(myrand());
 
 		auto end = high_res_get_now();
 
@@ -351,7 +365,7 @@ int main()
 	}
 
 	{
-		srand(0);
+		mysrand(0);
 		auto start = high_res_get_now();
 #ifdef COUNT_ALLOCATIONS
 		mark_alloc_counter_start();
@@ -359,7 +373,7 @@ int main()
 
 		container::hash_map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+			mymap[myrand()] = myrand();
 
 		auto end = high_res_get_now();
 
@@ -372,16 +386,16 @@ int main()
 	}
 
 	{
-		srand(0);
+		mysrand(0);
 		auto start = high_res_get_now();
 #ifdef COUNT_ALLOCATIONS
 		mark_alloc_counter_start();
 #endif
 
 		container::hash_map<int, int> mymap;
-		mymap.reserve(1000000);   // 50000);  // weird. this was the only value that worked well
+		mymap.reserve(33000);
 		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+			mymap[myrand()] = myrand();
 
 		auto end = high_res_get_now();
 
@@ -394,7 +408,7 @@ int main()
 	}
 
 	{
-		srand(0);
+		mysrand(0);
 		auto start = high_res_get_now();
 #ifdef COUNT_ALLOCATIONS
 		mark_alloc_counter_start();
@@ -402,7 +416,7 @@ int main()
 
 		std::unordered_map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+			mymap[myrand()] = myrand();
 
 		auto end = high_res_get_now();
 
@@ -415,7 +429,7 @@ int main()
 	}
 
 	{
-		srand(0);
+		mysrand(0);
 		auto start = high_res_get_now();
 #ifdef COUNT_ALLOCATIONS
 		mark_alloc_counter_start();
@@ -423,7 +437,7 @@ int main()
 
 		std::map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+			mymap[myrand()] = myrand();
 
 		auto end = high_res_get_now();
 
@@ -438,16 +452,16 @@ int main()
 	std::cout << "\n== 100k random erasures ==" << std::endl;
 
 	{
-		srand(0);
+		mysrand(0);
 
 		container::hash_map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+			mymap[myrand()] = myrand();
 
 		auto start = high_res_get_now();
 
 		for (int i = 0; i < 100000; ++i)
-			mymap.erase(rand());
+			mymap.erase(myrand());
 
 		auto end = high_res_get_now();
 
@@ -457,15 +471,15 @@ int main()
 	}
 
 	{
-		srand(0);
+		mysrand(0);
 		std::unordered_map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+			mymap[myrand()] = myrand();
 
 		auto start = high_res_get_now();
 
 		for (int i = 0; i < 100000; ++i)
-			mymap.erase(rand());
+			mymap.erase(myrand());
 
 		auto end = high_res_get_now();
 
@@ -475,15 +489,15 @@ int main()
 	}
 
 	{
-		srand(0);
+		mysrand(0);
 		std::map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+			mymap[myrand()] = myrand();
 
 		auto start = high_res_get_now();
 
 		for (int i = 0; i < 100000; ++i)
-			mymap.erase(rand());
+			mymap.erase(myrand());
 
 		auto end = high_res_get_now();
 
@@ -492,28 +506,50 @@ int main()
 		std::cout << "std map: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
 	}
 
-	std::cout << "\n== 1M iteration ==" << std::endl;
-
+	std::cout << "\n== 20*~32k iteration ==" << std::endl;
+	
 	{
-		srand(0);
+		mysrand(0);
 
-		container::hash_map<int, int> mymap;
-		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+		std::vector<int> mymap;
+		for (int i = 0; i < 32768; ++i)
+			mymap.push_back(myrand());
 
 		auto start = high_res_get_now();
 
 		size_t cnt {0};
 		for (int i = 0; i < 20; ++i)
 			for (auto& it : mymap)
-				++cnt;
+				cnt += it;
+
+		auto end = high_res_get_now();
+
+		sideeffect(mymap.back());
+		sideeffect(cnt);
+
+		auto diff = end - start;
+
+		std::cout << "vector: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
+	}
+	
+	{
+		mysrand(0);
+
+		container::hash_map<int, int> mymap;
+		for (int i = 0; i < 1000000; ++i)
+			mymap[myrand()] = myrand();
+
+		auto start = high_res_get_now();
+
+		size_t cnt {0};
+		for (int i = 0; i < 20; ++i)
+			for (auto& it : mymap)
+				cnt += it.second;
 
 		auto end = high_res_get_now();
 
 		sideeffect(mymap.begin()->second);
 		sideeffect(cnt);
-		if (cnt != mymap.size() * 20)
-			std::cout << "!! severe bug." << std::endl;
 
 		auto diff = end - start;
 
@@ -521,24 +557,22 @@ int main()
 	}
 
 	{
-		srand(0);
+		mysrand(0);
 		std::unordered_map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+			mymap[myrand()] = myrand();
 
 		auto start = high_res_get_now();
 
 		size_t cnt{0};
 		for (int i = 0; i < 20; ++i)
 			for (auto& it : mymap)
-				++cnt;
+				cnt += it.second;
 
 		auto end = high_res_get_now();
 
 		sideeffect(mymap.begin()->second);
 		sideeffect(cnt);
-		if (cnt != mymap.size() * 20)
-			std::cout << "!! severe bug." << std::endl;
 
 		auto diff = end - start;
 
@@ -546,24 +580,22 @@ int main()
 	}
 
 	{
-		srand(0);
+		mysrand(0);
 		std::map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+			mymap[myrand()] = myrand();
 
 		auto start = high_res_get_now();
 
 		size_t cnt{0};
 		for (int i = 0; i < 20; ++i)
 			for (auto& it : mymap)
-				++cnt;
+				cnt += it.second;
 
 		auto end = high_res_get_now();
 
 		sideeffect(mymap.begin()->second);
 		sideeffect(cnt);
-		if (cnt != mymap.size() * 20)
-			std::cout << "!! severe bug." << std::endl;
 
 		auto diff = end - start;
 
@@ -573,17 +605,17 @@ int main()
 	std::cout << "\n== 50k random finds among 1M contenance ==" << std::endl;
 
 	{
-		srand(0);
+		mysrand(0);
 
 		container::hash_map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+			mymap[myrand()] = myrand();
 
 		auto start = high_res_get_now();
 		
 		size_t founds = 0;
 		for (int i = 0; i < 50000; ++i)
-			founds += mymap.find(rand()) != mymap.end();
+			founds += mymap.find(myrand()) != mymap.end();
 
 		auto end = high_res_get_now();
 
@@ -596,16 +628,16 @@ int main()
 	}
 
 	{
-		srand(0);
+		mysrand(0);
 		std::unordered_map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+			mymap[myrand()] = myrand();
 
 		auto start = high_res_get_now();
 
 		size_t founds = 0;
 		for (int i = 0; i < 50000; ++i)
-			founds += mymap.find(rand()) != mymap.end();
+			founds += mymap.find(myrand()) != mymap.end();
 
 		auto end = high_res_get_now();
 
@@ -618,16 +650,16 @@ int main()
 	}
 
 	{
-		srand(0);
+		mysrand(0);
 		std::map<int, int> mymap;
 		for (int i = 0; i < 1000000; ++i)
-			mymap[rand()] = rand();
+			mymap[myrand()] = myrand();
 
 		auto start = high_res_get_now();
 
 		size_t founds = 0;
 		for (int i = 0; i < 50000; ++i)
-			founds += mymap.find(rand()) != mymap.end();
+			founds += mymap.find(myrand()) != mymap.end();
 
 		auto end = high_res_get_now();
 
