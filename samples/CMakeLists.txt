@@ -6,7 +6,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
  add_definitions(-std=c++11 -D_DEBUG -O0 -g)
 endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
- add_definitions(-std=c++11 -DNDEBUG -O3)
+ add_definitions(-std=c++11 -DNDEBUG -O3 -g)
 endif()
 
 include_directories("${PROJECT_BINARY_DIR}/../src")

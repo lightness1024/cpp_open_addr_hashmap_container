@@ -189,7 +189,9 @@ int main()
 
 		_ASSERT(testmap.size() == 2);
 
-		testmap["1"] = NeedCopy();
+		auto nc = NeedCopy();
+		testmap["1"] = nc;
+		_ASSERT(*testmap["1"].ptr == 2);
 
 		auto it = testmap.begin();
 		for (; it != testmap.end(); ++it)
@@ -313,7 +315,86 @@ int main()
 		 _ASSERT(mymap.empty());
 	 }
 
+	 {
+		 std::cout << "8 insertions followed by deletions" << std::endl;
+		 container::hash_map<int, std::shared_ptr<std::string>> mymap;
+		 
+		 mymap.reserve(8);
+		 _ASSERT(mymap.bucket_count() == 13);
+		 
+		 _ASSERT(mymap.count_buckstate_(container::buckstate::deleted) == 0);
+		 _ASSERT(mymap.count_buckstate_(container::buckstate::empty) == 13);
+
+		 mymap[0].reset(new std::string("bleu"));
+		 mymap[13].reset(new std::string("vert"));
+
+		 auto next = mymap.erase(mymap.find(0));
+		 _ASSERT(next->first == 13);
+		 _ASSERT(next == mymap.find(13));
+		 _ASSERT(next == mymap.begin());
+		 ++next;
+		 _ASSERT(next == mymap.end());
+		 next = mymap.erase(mymap.find(13));
+		 _ASSERT(next == mymap.end());
+		 
+		 // deleted count is 2 because 0 and 13 conflicts (collision) therefore make a CLUMP at position 0, of size 2.
+		 // so when we delete stuff here, it gets marked as deleted, not empty.
+		 _ASSERT(mymap.count_buckstate_(container::buckstate::deleted) == 2);
+
+		 static char const* values[] = {"bleu", "vert", "rouge", "orange", "marron", "pourpre", "bordeaux", "blanc"};
+		 static_assert(sizeof(values)/sizeof(values[0]) == 8, "code mistake in array length");
+		 for (int i = 0; i < 8; ++i)
+			 mymap[i].reset(new std::string(values[i]));
+		 
+		 _ASSERT(mymap.bucket_count() == 13);
+		 _ASSERT(mymap.size() == 8);
+		 _ASSERT(mymap.count_buckstate_(container::buckstate::occupied) == 8);
+
+		 for (int i = 0; i < 4; ++i)
+		 {
+			 mymap.erase(mymap.find(i*2));
+			 _ASSERT(mymap.find(i*2+1) != mymap.end());
+			 _ASSERT(mymap.size() == 8 - i - 1);
+		 }
+
+		 for (int i = 0; i < 4; ++i)
+		 {
+			 mymap.erase(mymap.find(i*2+1));
+			 _ASSERT(mymap.size() == 4 - i - 1);
+		 }
+		 _ASSERT(mymap.size() == 0);
+		 
+		 std::cout << "buckstate deleted count: " << mymap.count_buckstate_(container::buckstate::deleted) << std::endl;
+	 }
+	 
+	 {
+		 std::cout << "4 insertions followed by deletions" << std::endl;
+		 container::hash_map<int, std::shared_ptr<std::string>> mymap;
+		 
+		 mymap.reserve(8);
+		 
+		 _ASSERT(mymap.count_buckstate_(container::buckstate::deleted) == 0);
+		 _ASSERT(mymap.count_buckstate_(container::buckstate::empty) == 13);
+
+		 static char const* values[] = {"bleu", "vert", "rouge", "orange"};
+		 for (int i = 0; i < 4; ++i)
+			 mymap[i * 3].reset(new std::string(values[i]));
+		 
+		 _ASSERT(mymap.count_buckstate_(container::buckstate::occupied) == 4);
+
+		 while (!mymap.empty())
+		 {
+			 mymap.erase(mymap.begin());
+		 }
+		 auto delcnt = mymap.count_buckstate_(container::buckstate::deleted);
+		 _ASSERT(delcnt == 0); // this is because we inserted at positions that DO NOT COLLISION in the space 0-13. (0, 3, 6, 8, 12)
+		 // when we erase such keys, they have empty space around, therefore they get marked as empty, and do not delete-pollute.
+		 std::cout << "buckstate deleted count: " << delcnt << std::endl;
+	 }
+
 #ifdef NDEBUG
+
+	 //goto erase_test;
 
 	// bit of benching:
 
@@ -449,19 +530,20 @@ int main()
 #endif
 	}
 
-	std::cout << "\n== 100k random erasures ==" << std::endl;
+erase_test:
+	std::cout << "\n== 20k erases among 65k ==" << std::endl;
 
 	{
 		mysrand(0);
 
 		container::hash_map<int, int> mymap;
-		for (int i = 0; i < 1000000; ++i)
-			mymap[myrand()] = myrand();
+		for (int i = 0; i < 100000; ++i)
+			mymap[myrand()+myrand()] = myrand();
 
 		auto start = high_res_get_now();
 
-		for (int i = 0; i < 100000; ++i)
-			mymap.erase(myrand());
+		for (int i = 0; i < 20000; ++i)
+			mymap.erase(myrand()+myrand());
 
 		auto end = high_res_get_now();
 
@@ -470,16 +552,18 @@ int main()
 		std::cout << "*openaddr: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
 	}
 
+	//return 0;
+
 	{
 		mysrand(0);
 		std::unordered_map<int, int> mymap;
-		for (int i = 0; i < 1000000; ++i)
-			mymap[myrand()] = myrand();
+		for (int i = 0; i < 100000; ++i)
+			mymap[myrand()+myrand()] = myrand();
 
 		auto start = high_res_get_now();
 
-		for (int i = 0; i < 100000; ++i)
-			mymap.erase(myrand());
+		for (int i = 0; i < 20000; ++i)
+			mymap.erase(myrand()+myrand());
 
 		auto end = high_res_get_now();
 
@@ -491,13 +575,13 @@ int main()
 	{
 		mysrand(0);
 		std::map<int, int> mymap;
-		for (int i = 0; i < 1000000; ++i)
-			mymap[myrand()] = myrand();
+		for (int i = 0; i < 100000; ++i)
+			mymap[myrand()+myrand()] = myrand();
 
 		auto start = high_res_get_now();
 
-		for (int i = 0; i < 100000; ++i)
-			mymap.erase(myrand());
+		for (int i = 0; i < 20000; ++i)
+			mymap.erase(myrand()+myrand());
 
 		auto end = high_res_get_now();
 
@@ -507,7 +591,7 @@ int main()
 	}
 
 	std::cout << "\n== 20*~32k iteration ==" << std::endl;
-	
+
 	{
 		mysrand(0);
 
@@ -531,7 +615,7 @@ int main()
 
 		std::cout << "vector: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
 	}
-	
+
 	{
 		mysrand(0);
 
@@ -601,7 +685,7 @@ int main()
 
 		std::cout << "std map: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
 	}
-	
+
 	std::cout << "\n== 50k random finds among 1M contenance ==" << std::endl;
 
 	{
@@ -612,7 +696,7 @@ int main()
 			mymap[myrand()] = myrand();
 
 		auto start = high_res_get_now();
-		
+
 		size_t founds = 0;
 		for (int i = 0; i < 50000; ++i)
 			founds += mymap.find(myrand()) != mymap.end();
@@ -669,7 +753,7 @@ int main()
 		auto diff = end - start;
 
 		std::cout << "std map: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
-	}	
+	}
 #endif
 }
 

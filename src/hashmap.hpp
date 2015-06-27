@@ -323,6 +323,8 @@ namespace container
 			return detail::improve_primeness((size_t)(minbuckets * 1.1113f));
 		return *it;
 	}
+	
+	enum class buckets_rounding { nearest, next_prime };
 
 	//============================================================================
 	// class hash_map
@@ -365,16 +367,19 @@ namespace container
 		mapped_type const&	operator [] (key_type const& key) const;
 		mapped_type&		at(const key_type& k);
 		mapped_type const&	at(const key_type& k) const;
+		//! non standard extension. this is more convenient than having to use make pair or typedef the value type.
 		std::pair<iterator, bool> insert(key_type const& key, mapped_type const& mapped_value);
+		//! standard pair insert overload
 		std::pair<iterator, bool> insert(const_reference value);
 		template <class InputIterator>
 		void					  insert(InputIterator first, InputIterator last);  //!< range insert.
-		// emplace 0
+		//! emplace 0 args
 		std::pair<iterator, bool> emplace(key_type const& key);
 		iterator                  emplace_pos(size_type pos, key_type const& key);
-		// emplace 1
+		//! emplace 1 arg
 		template< typename MappedTypeCompatType >
 		std::pair<iterator, bool> emplace(key_type const& key, MappedTypeCompatType const& mappedconstruct);
+		//! "emplace hint" (more for internal usage)
 		template< typename MappedTypeCompatType >
 		iterator            emplace_pos(size_type pos, key_type const& key, MappedTypeCompatType const& mappedconstruct);
 		iterator			erase(const_iterator position);
@@ -385,9 +390,10 @@ namespace container
 		void				swap(hash_map& rhs);
 		float				load_factor() const;
 		float				max_load_factor() const;
-		void				reserve(size_type n);  //!< please indicate intended contenance (actual buckets will be n / max_load_factor)
+		void				reserve(size_type n, buckets_rounding rounding = buckets_rounding::next_prime);  //!< please indicate intended contenance (actual buckets will be policy(n / max_load_factor))
 		void 				rehash(size_type n);  //!< please indicate directly number of buckets.
 		key_equal			key_eq() const;
+		size_type 			bucket_count() const;
 		// iterator access:
 		iterator			begin();
 		const_iterator		begin() const;
@@ -397,6 +403,8 @@ namespace container
 		const_iterator		cend() const;
 		iterator			find(key_type const& k);
 		const_iterator 		find(key_type const& k) const;
+		//! non standard extension that allows some statistics
+		size_type			count_buckstate_(buckstate of_value) const;
 
 	private:
 		enum found_status { vacant, found, notfound, full_notfound, unset };
@@ -485,7 +493,7 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 		auto end = assignfrom.cend();
 		for (; it != end; ++it)
 		{
-			emplace(it->first, it->second).second;
+			emplace(it->first, it->second);
 		}
 	}
 
@@ -781,9 +789,14 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	}
 
 	HASHMAP_TPL_DECL
-	void HASHMAP_DECL::reserve(size_type n)  // intended contenance
+	void HASHMAP_DECL::reserve(size_type n, buckets_rounding rounding /*= buckets_rounding::next_prime*/)  // intended contenance
 	{
-		rehash(size_t((float)n / max_load_factor()));
+		size_t numbuckets;
+		if (rounding == buckets_rounding::next_prime)
+			numbuckets = next_advised_bucket_count(n, max_load_factor());
+		else
+			numbuckets = size_t((float)n / max_load_factor());
+		rehash(numbuckets);
 	}
 
 	HASHMAP_TPL_DECL
@@ -819,6 +832,12 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	typename HASHMAP_DECL::key_equal HASHMAP_DECL::key_eq() const
 	{
 		return eq_fn;
+	}
+	
+	HASHMAP_TPL_DECL
+	typename HASHMAP_DECL::size_type HASHMAP_DECL::bucket_count() const
+	{
+		return buckets.array.size();
 	}
 
 	HASHMAP_TPL_DECL
@@ -869,6 +888,16 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	{
 		auto sttpos = find_placement(k, purpose::find);
 		return const_iterator(&buckets, sttpos.first == found ? sttpos.second : buckets.array.size());
+	}
+	
+	HASHMAP_TPL_DECL
+	typename HASHMAP_DECL::size_type HASHMAP_DECL::count_buckstate_(buckstate of_value) const
+	{
+		size_t cnt = 0;
+		for (size_t i = 0; i < buckets.array.size(); ++i)
+			if (buckets.occup.get_at(i) == of_value)
+				++cnt;
+		return cnt;
 	}
 
 #undef HASHMAP_TPL_DECL
