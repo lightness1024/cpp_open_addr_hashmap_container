@@ -405,6 +405,9 @@ namespace container
 		std::pair<found_status, size_t> find_placement(key_type const& k, purpose p) const;
 		size_t find_next_occupied(size_t from_incl) const;   //< if from_incl is occupied it returns from_incl.
 		size_t increment_modulo_bucket_size(size_t value) const;
+		size_t decrement_modulo_bucket_size(size_t value) const;
+		void set_smart_deleted_state_at(size_t pos);
+		bool is_in_clump(size_t pos);
 
 		size_type count;
 		map_buckets<value_type> buckets;
@@ -421,6 +424,15 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	++value;
 	if (value >= limit)
 		value = 0;
+	return value;
+}
+
+inline size_t decrement_modulo(size_t value, size_t limit)
+{
+	if (value == 0)
+		value = limit - 1;
+	else
+		--value;
 	return value;
 }
 
@@ -481,6 +493,12 @@ inline size_t increment_modulo(size_t value, size_t limit)
 	size_t HASHMAP_DECL::increment_modulo_bucket_size(size_t value) const
 	{
 		return increment_modulo(value, buckets.array.size());
+	}
+
+	HASHMAP_TPL_DECL
+	size_t HASHMAP_DECL::decrement_modulo_bucket_size(size_t value) const
+	{
+		return decrement_modulo(value, buckets.array.size());
 	}
 	
 	HASHMAP_TPL_DECL
@@ -657,13 +675,44 @@ inline size_t increment_modulo(size_t value, size_t limit)
 		}
 	}
 
+	// is surrounded by at least one deleted or occupied slot
+	HASHMAP_TPL_DECL
+	bool HASHMAP_DECL::is_in_clump(size_t pos)
+	{
+		_ASSERT(buckets.array.size() > 3);  // should always be true, normally the minimum size is 13.
+
+		size_t onebefore = decrement_modulo_bucket_size(pos);
+		size_t oneafter = increment_modulo_bucket_size(pos);
+		auto left_state = buckets.occup.get_at(onebefore);
+		auto right_state = buckets.occup.get_at(oneafter);
+		bool is_free =   left_state  == buckstate::empty
+		              && right_state == buckstate::empty;
+		return !is_free;
+	}
+
+	// when we delete an entry, its slot can be marked empty or deleted.
+	// the deleted state serves the purpose of keeping the connection between entries in clumps.
+	// because of linear-probing, collisionning entries get appended on the first empty slot.
+	// which means to find them later on, we need to know when the key we are looking for is not
+	// in its right place later, that maybe some other key was there before and got deleted,
+	// so our key maybe further on the right.
+	// But, there is no need to mark this connection if the surroundings are clear from
+	// probed-placed entries. To avoid "deleted" flag pollution, we can directly mark this slot empty.
+	HASHMAP_TPL_DECL
+	void HASHMAP_DECL::set_smart_deleted_state_at(size_t pos)
+	{
+		bool belongs_to_clump = is_in_clump(pos);
+		buckets.occup.set_at(pos, belongs_to_clump ? buckstate::deleted : buckstate::empty);
+	}
+
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::iterator HASHMAP_DECL::erase(const_iterator position)
 	{
 		size_t pos = (value_type*)&(*position) - &buckets.array[0];
 		_ASSERT(buckets.occup.get_at(pos) == buckstate::occupied);
+		set_smart_deleted_state_at(pos);
+		// destroy entry
 		buckets.array[pos].~value_type();
-		buckets.occup.set_at(pos, buckstate::deleted);
 		--count;
 		pos = find_next_occupied(increment_modulo_bucket_size(pos));
 		return iterator(&buckets, pos);
