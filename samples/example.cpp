@@ -387,8 +387,9 @@ int main()
 			 mymap.erase(mymap.begin());
 		 }
 		 auto delcnt = mymap.count_buckstate_(container::buckstate::deleted);
-		 _ASSERT(delcnt == 0); // this is because we inserted at positions that DO NOT COLLISION in the space 0-13. (0, 3, 6, 8, 12)
-		 // when we erase such keys, they have empty space around, therefore they get marked as empty, and do not delete-pollute.
+		 // we cannot assert anything here, because std hash functions are not specified by standard.
+		 // microsoft causes 3 collisions in this case, gcc and clang 0.
+		 //_ASSERT(delcnt == 0);
 		 std::cout << "buckstate deleted count: " << delcnt << std::endl;
 	 }
 
