@@ -152,6 +152,12 @@ void test08();
 void test09();
 void test10();
 
+template< typename T >
+struct idiot_hasher
+{
+	size_t operator()(const T& x) const { return 0; }
+};
+
 int main()
 {
 	test01();
@@ -391,6 +397,47 @@ int main()
 		 // microsoft causes 3 collisions in this case, gcc and clang 0.
 		 //_ASSERT(delcnt == 0);
 		 std::cout << "buckstate deleted count: " << delcnt << std::endl;
+	 }
+
+	 {
+		 typedef container::hash_map<int, std::string, idiot_hasher<int>> i2s;
+
+		 i2s map;
+
+		 map[1] = "one";
+		 auto empties = map.count_buckstate_(container::buckstate::empty) + 1;
+
+		 map[7] = "seven";
+		 map[2] = "two";
+		 map[3] = "three";
+		 map[40] = "fourty";
+		 map[50] = "fifty";
+		 map[60] = "sixty";
+
+		 _ASSERT(map.count_buckstate_(container::buckstate::occupied) == 7);
+		 _ASSERT(map.size() == 7);
+
+		 _ASSERT(empties - 7 == map.count_buckstate_(container::buckstate::empty));
+
+		 map.erase(1);
+		 _ASSERT(map.count_buckstate_(container::buckstate::deleted) == 1);
+		 _ASSERT(map.size() == 6);
+
+		 map.erase(2);
+		 _ASSERT(map.size() == 5);
+		 map.erase(40);
+		 map.erase(3);
+
+		 _ASSERT(map.count_buckstate_(container::buckstate::deleted) == 4);
+		 _ASSERT(map.size() == 3);
+		 _ASSERT(map[50] == "fifty");
+		 _ASSERT(map[60] == "sixty");
+		 _ASSERT(map[7] == "seven");
+
+		 map[2] = "two";
+		 _ASSERT(map.size() == 4);
+		 _ASSERT(map.count_buckstate_(container::buckstate::deleted) == 3);
+
 	 }
 
 #ifdef NDEBUG

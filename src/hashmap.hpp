@@ -22,22 +22,52 @@
 		   misrepresented as being the original software.
 		   3. This notice may not be removed or altered from any source distribution.
 
-	supplementary restrictions:
-	  this code's and derivatives's license shall not be changed.
-	  (notably certainly not changed to GPL, nor BSD, nor MIT)
-	  
-	  [You might obtain a special permission to sub-license
-	   to wtfpl (http://www.wtfpl.net/), after express
-	   enquiry with the original author]
-
-	  For example, you can make it private to your organisation (closed source).
-	  but you CANNOT redistribute variations under BSD, GPL, MIT or any other that is not zlib.
-	  Variations of this code CANNOT be made public domain until the full legal
-	  time lapse is expired for public domain automatic categorization decay.
+my word:
+	  You can use and keep this code private to your organisation (closed source).
+	  Without the need to mention this disclaimer in the distributed binary form of your product.
 ***/
+
+
 
 // the behavior of this map is very largely based on C++11 unordered_map
 // http://www.cplusplus.com/reference/unordered_map/unordered_map/
+
+// it works with standard C++11 hashers as default (std::hash)
+// requirements:
+// any type used as key must have a hasher, and operator == (or an std::equal_to overload, or you can pass a custom equal-er)
+// types used as values must be copiables (for buffer migration when extending)
+
+// tested compilers:
+//  VS 2013 / VS 2015
+//  gcc 4.9
+//  clang 3.5 (or was it 3.6? hm...)
+
+// no issues reported by valgrind
+
+// terminology:
+//
+//  - OAHM : open address hash map
+//
+//  - open address : fact that the memory used to store your content is one straight flat buffer,
+//                   and hashes are (almost) direct indices in it.
+//
+//  - linear probing : the strategy used by this hash map to resolve conflicts.
+//
+//  - bucket : a word chosen by linked-list based hash maps (LLHM e.g. std::unordered).
+//             for a LLHM, a bucket is the host of the locality for one hash (i.e. all pairs of the same hash goes into one bucket).
+//             therefore for a LLHM a bucket is a linked list.
+//             (locality = by reference to local_iterator)
+//             in this OAHM, a bucket is just ONE record and does not represent a hash family.
+//             therefore in our case, a bucket is a `pair<k, v>`
+//             hash families can get scattered over the memory zone and are found/placed using linear probing.
+//
+//  - load factor : the load factor is the contenance versus the reserved zone. this MUST be kept under 0.8
+//
+//  - delete contamination : when buckets get deleted, if some bucket exists right next to it, it marks itself as "deleted".
+//                           this is to keep the linear-probing link working, marking it as "empty" would break the link
+//                           with subsequent data, if any was placed after collision probing.
+//                           unfortunately, this flag dirties the map space as deletion count increase,
+//                           and searches will get slower.
 
 
 #ifndef HASHMAP_SERHUM_INCLUDEGUARD_L1024_82014
@@ -110,7 +140,7 @@ namespace container
 		map_buckets() = default;
 		map_buckets(map_buckets const&) = delete;
 		map_buckets(map_buckets&&) = delete;
-		
+
 		~map_buckets()
 		{
 			size_t i = 0;
@@ -258,7 +288,7 @@ namespace container
 		++(*this);
 		return it;
 	}
-	
+
 	ITER_TPL_DECL
 	template< typename PairT, typename SRCPairT >
 	bool ITER_DECL::operator== (hash_map_iterator<PairT, SRCPairT> const& rhs) const
@@ -323,8 +353,21 @@ namespace container
 			return detail::improve_primeness((size_t)(minbuckets * 1.1113f));
 		return *it;
 	}
-	
-	enum class buckets_rounding { nearest, next_prime };
+
+	namespace impl
+	{
+		enum class buckets_rounding { nearest, next_prime };
+		enum found_status { vacant, found, notfound, full_notfound, unset };
+		enum class purpose { find, place };
+
+		typedef std::pair<found_status, size_t> stpos_t;
+
+		struct multi_pos
+		{
+			stpos_t find;   // position for find purpose
+			stpos_t place;  // position for place purpose
+		};
+	}
 
 	//============================================================================
 	// class hash_map
@@ -338,20 +381,21 @@ namespace container
 	public:
 		// all the standard typedefs (minus allocator):
 		typedef std::pair< const Key, MappedValue > value_type;
-		typedef value_type const					const_value_type;
+		typedef value_type const						const_value_type;
 		typedef Key				key_type;		// the first template parameter(Key)
 		typedef MappedValue		mapped_type;		// the second template parameter(MappedValue)
-		typedef HashFunc		hasher;			// the third template parameter(HashFunc)	defaults to : std::hash<key_type>
+		typedef HashFunc			hasher;			// the third template parameter(HashFunc)	defaults to : std::hash<key_type>
 		typedef EqualFunc		key_equal;		// the fourth template parameter(Pred)	defaults to : std::equal_to<key_type>
 		typedef value_type&		reference;
 		typedef value_type const& const_reference;
 		typedef value_type*		pointer;
 		typedef value_type const*	const_pointer;
-		typedef hash_map_iterator<value_type,    value_type>		iterator;
+		typedef hash_map_iterator<value_type,    value_type>			iterator;
 		typedef hash_map_iterator<const_value_type, value_type>		const_iterator;
 		typedef size_t			size_type;
 		typedef ptrdiff_t		difference_type;
 
+		//! default construction (start empty, but will resize on first insertion to 13 initial buckets)
 							hash_map();
 							hash_map(size_type min_num_of_init_buckets);
 							hash_map(hash_map const& copyfrom);
@@ -361,11 +405,14 @@ namespace container
 		hash_map&			operator = (hash_map const& assignfrom);
 		void				copy(hash_map const& assignfrom);
 
+		bool				operator == (hash_map const& compare_to) const;
+		bool				operator != (hash_map const& compare_to) const;
+
 		size_type			size() const;
 		bool				empty() const;
-		mapped_type&		operator [] (key_type const& key);
+		mapped_type&			operator [] (key_type const& key);
 		mapped_type const&	operator [] (key_type const& key) const;
-		mapped_type&		at(const key_type& k);
+		mapped_type&			at(const key_type& k);
 		mapped_type const&	at(const key_type& k) const;
 		//! non standard extension. this is more convenient than having to use make pair or typedef the value type.
 		std::pair<iterator, bool> insert(key_type const& key, mapped_type const& mapped_value);
@@ -407,10 +454,8 @@ namespace container
 		size_type			count_buckstate_(buckstate of_value) const;
 
 	private:
-		enum found_status { vacant, found, notfound, full_notfound, unset };
-		enum class purpose { find, place };
-		found_status determine_found_status(size_t at, key_type const& k, purpose p) const;
-		std::pair<found_status, size_t> find_placement(key_type const& k, purpose p) const;
+		impl::found_status determine_found_status(size_t at, key_type const& k, impl::purpose p) const;
+		impl::multi_pos find_placement(key_type const& k, impl::purpose p) const;
 		size_t find_next_occupied(size_t from_incl) const;   //< if from_incl is occupied it returns from_incl.
 		size_t increment_modulo_bucket_size(size_t value) const;
 		size_t decrement_modulo_bucket_size(size_t value) const;
@@ -508,10 +553,11 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	{
 		return decrement_modulo(value, buckets.array.size());
 	}
-	
+
 	HASHMAP_TPL_DECL
-	typename HASHMAP_DECL::found_status HASHMAP_DECL::determine_found_status(size_t at, key_type const& k, purpose p) const
+	impl::found_status HASHMAP_DECL::determine_found_status(size_t at, key_type const& k, impl::purpose p) const
 	{
+		using namespace impl;
 		found_status st = notfound;
 		if (buckets.occup.size() == 0)
 			return full_notfound;
@@ -520,19 +566,29 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 		if (keyequal)
 			st = found;
 		else if (!occupied)
-			st = buckets.occup.get_at(at) == buckstate::empty || p == purpose::place ? vacant : notfound;
+		{
+			// if not occupied and not empty it can only be "deleted". this is the 3rd implicit condition. a deleted bucket is a valid placement.
+			bool empty_or_placepurp = buckets.occup.get_at(at) == buckstate::empty || p == purpose::place;
+			st = empty_or_placepurp ? vacant : notfound;
+		}
 		return st;
 	}
-	
+
 	HASHMAP_TPL_DECL
-	std::pair<typename HASHMAP_DECL::found_status, size_t> HASHMAP_DECL::find_placement(key_type const& k, purpose p) const
+	impl::multi_pos HASHMAP_DECL::find_placement(key_type const& k, impl::purpose p) const
 	{
+		using namespace impl;
+		multi_pos	 mp;
+		if (p == purpose::place)
+			mp.find.first = unset;
+		stpos_t&		 status	 = p == purpose::find ? mp.find.first : mp.place.first;
+		size_t&		 pos		 = p == purpose::find ? mp.find.second : mp.place.second;
 		size_t const limit   = buckets.array.size();
 		if (limit == 0)
 			return std::make_pair(full_notfound, 0);
 		size_t const h       = hash_fn(k);
-		size_t       pos     = h % limit;
-		found_status status  = determine_found_status(pos, k, p);
+					 pos     = h % limit;
+					 status  = determine_found_status(pos, k, p);
 		size_t       loopcnt = 0;
 		while (status == notfound && loopcnt < limit)
 		{
@@ -544,7 +600,8 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 		if (status == notfound && loopcnt == limit)
 			status = full_notfound;
 		_ASSERT(status == vacant || status == found || status == full_notfound);  // this function's invariant.
-		return std::make_pair(status, pos);
+
+		return mp;
 	}
 
 	HASHMAP_TPL_DECL
@@ -579,9 +636,10 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	typename HASHMAP_DECL::mapped_type& HASHMAP_DECL::operator [] (key_type const& key)
 	{
 		auto stat_pos = find_placement(key, purpose::find);
-		if (stat_pos.first != found)  // need to insert if not found. (operator [] 's responsibility)
+		if (stat_pos.find.first != found)  // need to insert if not found. (operator [] 's responsibility)
 		{
-			auto res = emplace_pos(stat_pos.second, key);
+			_ASSERT(stat_pos.place.first != impl::unset);
+			auto res = emplace_pos(stat_pos.place.second, key);
 			return res->second;
 		}
 		_ASSERT(stat_pos.first == found);
@@ -833,7 +891,7 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	{
 		return eq_fn;
 	}
-	
+
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::size_type HASHMAP_DECL::bucket_count() const
 	{
@@ -889,7 +947,7 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 		auto sttpos = find_placement(k, purpose::find);
 		return const_iterator(&buckets, sttpos.first == found ? sttpos.second : buckets.array.size());
 	}
-	
+
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::size_type HASHMAP_DECL::count_buckstate_(buckstate of_value) const
 	{
