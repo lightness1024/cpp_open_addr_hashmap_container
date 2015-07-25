@@ -354,18 +354,23 @@ namespace container
 		return *it;
 	}
 
+	enum class buckets_rounding { nearest, next_prime };
+
 	namespace impl
 	{
-		enum class buckets_rounding { nearest, next_prime };
 		enum found_status { vacant, found, notfound, full_notfound, unset };
 		enum class purpose { find, place };
 
-		typedef std::pair<found_status, size_t> stpos_t;
+		struct statpos
+		{
+			found_status stat;
+			size_t pos;
+		};
 
 		struct multi_pos
 		{
-			stpos_t find;   // position for find purpose
-			stpos_t place;  // position for place purpose
+			statpos find;   // position for find purpose
+			statpos place;  // position for place purpose
 		};
 	}
 
@@ -580,12 +585,12 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 		using namespace impl;
 		multi_pos	 mp;
 		if (p == purpose::place)
-			mp.find.first = unset;
-		stpos_t&		 status	 = p == purpose::find ? mp.find.first : mp.place.first;
-		size_t&		 pos		 = p == purpose::find ? mp.find.second : mp.place.second;
+			mp.find.stat = unset;
+		auto&	 	 status	 = p == purpose::find ? mp.find.stat : mp.place.stat;
+		size_t&		 pos	 = p == purpose::find ? mp.find.pos : mp.place.pos;
 		size_t const limit   = buckets.array.size();
 		if (limit == 0)
-			return std::make_pair(full_notfound, 0);
+			return multi_pos { {p == purpose::place ? unset : full_notfound, 0}, {full_notfound, 0} };
 		size_t const h       = hash_fn(k);
 					 pos     = h % limit;
 					 status  = determine_found_status(pos, k, p);
@@ -595,6 +600,11 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 			// check next (linear probing):
 			pos = increment_modulo(pos, limit);
 			status = determine_found_status(pos, k, p);
+			if (p == purpose::find && mp.place.stat == found)
+			{
+				mp.place.stat = determine_found_status(pos, k, purpose::place);
+				mp.place.pos = pos;
+			}
 			++loopcnt;
 		}
 		if (status == notfound && loopcnt == limit)
@@ -635,15 +645,16 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::mapped_type& HASHMAP_DECL::operator [] (key_type const& key)
 	{
-		auto stat_pos = find_placement(key, purpose::find);
-		if (stat_pos.find.first != found)  // need to insert if not found. (operator [] 's responsibility)
+		using namespace impl;
+		auto multi_stat_pos = find_placement(key, purpose::find);
+		if (multi_stat_pos.find.stat != found)  // need to insert if not found. (operator [] 's responsibility)
 		{
-			_ASSERT(stat_pos.place.first != impl::unset);
-			auto res = emplace_pos(stat_pos.place.second, key);
+			_ASSERT(multi_stat_pos.place.stat != unset);
+			auto res = emplace_pos(multi_stat_pos.place.pos, key);
 			return res->second;
 		}
-		_ASSERT(stat_pos.first == found);
-		return buckets.array[stat_pos.second].second;
+		_ASSERT(multi_stat_pos.find.stat == found);
+		return buckets.array[multi_stat_pos.find.pos].second;
 	}
 
 	HASHMAP_TPL_DECL
@@ -662,13 +673,14 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::mapped_type const& HASHMAP_DECL::at(const key_type& key) const
 	{
-		auto stat_pos = find_placement(key, purpose::find);
-		if (stat_pos.first != found)
+		using namespace impl;
+		auto stat_pos = find_placement(key, purpose::find).find;
+		if (stat_pos.stat != found)
 		{
 			throw std::out_of_range("try to access a non existing element");
 		}
-		_ASSERT(stat_pos.first == found);
-		return buckets.array[stat_pos.second].second;
+		_ASSERT(stat_pos.stat == found);
+		return buckets.array[stat_pos.pos].second;
 	}
 
 	HASHMAP_TPL_DECL
@@ -700,8 +712,9 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	template< typename MappedTypeCompatType >
 	std::pair<typename HASHMAP_DECL::iterator, bool> HASHMAP_DECL::emplace(key_type const& key, MappedTypeCompatType const& mappedconstruct)
 	{
-		auto stat_pos = find_placement(key, purpose::place);
-		return std::make_pair(emplace_pos(stat_pos.second, key, mappedconstruct), stat_pos.first != found);
+		using namespace impl;
+		auto stat_pos = find_placement(key, purpose::place).place;
+		return std::make_pair(emplace_pos(stat_pos.pos, key, mappedconstruct), stat_pos.stat != found);
 	}
 
 	HASHMAP_TPL_DECL
@@ -714,10 +727,13 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	template< typename MappedTypeCompatType >
 	typename HASHMAP_DECL::iterator HASHMAP_DECL::emplace_pos(size_type pos, key_type const& key, MappedTypeCompatType const& mappedconstruct)
 	{
+		using namespace impl;
 		found_status status = determine_found_status(pos, key, purpose::place);  // check the pos hint
 		if (status == notfound)
 		{	// it was a bad hint
-			std::tie(status, pos) = find_placement(key, purpose::place);
+			auto p = find_placement(key, purpose::place).place;
+			status = p.stat;
+			pos = p.pos;
 		}
 
 		if (status == found)
@@ -730,7 +746,9 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 			if (float(count + 1) / max_load_factor() >= buckets.array.size())  // not enough space to guarantee a correct load factor
 			{
 				rehash(next_advised_bucket_count(count < 30000 ? (count + 1) * 2 : count * 3 / 2, max_load_factor()));
-				std::tie(status, pos) = find_placement(key, purpose::place);
+				auto p = find_placement(key, purpose::place).place;
+				status = p.stat;
+				pos = p.pos;
 				_ASSERT(status == vacant);
 			}
 			_ASSERT(buckets.occup.get_at(pos) != buckstate::occupied);
@@ -787,10 +805,10 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::size_type HASHMAP_DECL::erase(key_type const& key)
 	{
-		auto stat_pos = find_placement(key, purpose::find);
-		if (stat_pos.first == found)
+		auto stat_pos = find_placement(key, impl::purpose::find).find;
+		if (stat_pos.stat == impl::found)
 		{
-			erase(const_iterator(&buckets, stat_pos.second));
+			erase(const_iterator(&buckets, stat_pos.pos));
 			return 1;
 		}
 		return 0;
@@ -810,8 +828,8 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	bool HASHMAP_DECL::has_key(key_type const& tosearch) const
 	{
-		auto st = find_placement(tosearch, purpose::find);
-		return st.first == found;
+		auto st = find_placement(tosearch, impl::purpose::find).find;
+		return st.stat == impl::found;
 	}
 
 	HASHMAP_TPL_DECL
@@ -937,15 +955,15 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::iterator HASHMAP_DECL::find(key_type const& k)
 	{
-		auto sttpos = find_placement(k, purpose::find);
-		return iterator(&buckets, sttpos.first == found ? sttpos.second : buckets.array.size());
+		auto sttpos = find_placement(k, impl::purpose::find).find;
+		return iterator(&buckets, sttpos.stat == impl::found ? sttpos.pos : buckets.array.size());
 	}
 
 	HASHMAP_TPL_DECL
 	typename HASHMAP_DECL::const_iterator HASHMAP_DECL::find(key_type const& k) const
 	{
-		auto sttpos = find_placement(k, purpose::find);
-		return const_iterator(&buckets, sttpos.first == found ? sttpos.second : buckets.array.size());
+		auto sttpos = find_placement(k, impl::purpose::find).find;
+		return const_iterator(&buckets, sttpos.stat == impl::found ? sttpos.pos : buckets.array.size());
 	}
 
 	HASHMAP_TPL_DECL
