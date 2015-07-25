@@ -38,9 +38,9 @@ my word:
 // types used as values must be copiables (for buffer migration when extending)
 
 // tested compilers:
-//  VS 2013 / VS 2015
-//  gcc 4.9
-//  clang 3.5 (or was it 3.6? hm...)
+//  MS VS 2013 & VS 2015
+//  gcc 4.8 & gcc 4.9
+//  clang 3.5 & 3.6
 
 // no issues reported by valgrind
 
@@ -69,6 +69,12 @@ my word:
 //                           unfortunately, this flag dirties the map space as deletion count increase,
 //                           and searches will get slower.
 
+// benchmark executed on core i5, linux, clang 3.6 -O3
+// == 50k random finds among 32k contenance ==
+// *openaddr HM: 	0.808362 ms
+// std unordered: 	0.714579 ms
+// std map: 		6.90065 ms
+
 
 #ifndef HASHMAP_SERHUM_INCLUDEGUARD_L1024_82014
 #define HASHMAP_SERHUM_INCLUDEGUARD_L1024_82014 1
@@ -85,6 +91,12 @@ my word:
 #ifndef _countof
 # define _countof(a) (sizeof(a) / sizeof(a[0]))
 # define do_undef_countof_at_file_end
+#endif
+
+#ifdef _DEBUG
+# define DBG_NLY(x) x
+#else
+# define DBG_NLY(x)
 #endif
 
 namespace container
@@ -359,7 +371,7 @@ namespace container
 	namespace impl
 	{
 		enum found_status { vacant, found, notfound, full_notfound, unset };
-		enum class purpose { find, place };
+		enum class purpose { find, place, find_and_place };
 
 		struct statpos
 		{
@@ -386,7 +398,7 @@ namespace container
 	public:
 		// all the standard typedefs (minus allocator):
 		typedef std::pair< const Key, MappedValue > value_type;
-		typedef value_type const						const_value_type;
+		typedef value_type const					const_value_type;
 		typedef Key				key_type;		// the first template parameter(Key)
 		typedef MappedValue		mapped_type;		// the second template parameter(MappedValue)
 		typedef HashFunc			hasher;			// the third template parameter(HashFunc)	defaults to : std::hash<key_type>
@@ -442,6 +454,7 @@ namespace container
 		void				swap(hash_map& rhs);
 		float				load_factor() const;
 		float				max_load_factor() const;
+		void				max_load_factor(float lf);   //!< change max load factor. !: value internally clamped between 0.1 and 1.0
 		void				reserve(size_type n, buckets_rounding rounding = buckets_rounding::next_prime);  //!< please indicate intended contenance (actual buckets will be policy(n / max_load_factor))
 		void 				rehash(size_type n);  //!< please indicate directly number of buckets.
 		key_equal			key_eq() const;
@@ -460,6 +473,7 @@ namespace container
 
 	private:
 		impl::found_status determine_found_status(size_t at, key_type const& k, impl::purpose p) const;
+		void determine_multi_found_status(impl::multi_pos& mp /*out*/, size_t pos, key_type const& k, impl::purpose p) const;
 		impl::multi_pos find_placement(key_type const& k, impl::purpose p) const;
 		size_t find_next_occupied(size_t from_incl) const;   //< if from_incl is occupied it returns from_incl.
 		size_t increment_modulo_bucket_size(size_t value) const;
@@ -467,12 +481,14 @@ namespace container
 		void set_smart_deleted_state_at(size_t pos);
 		bool is_in_clump(size_t pos);
 
-		size_type count;
+		size_type count = 0;
 		map_buckets<value_type> buckets;
 		hasher hash_fn;
 		key_equal eq_fn;
+		float maxloadf = 0.7f;
 #ifdef _DEBUG
 		value_type* _dbgbuckets;  // help vizu in watch
+		bool _antiresize_recursion = false;
 #endif
 	};
 
@@ -501,21 +517,20 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 
 #define HASHMAP_DECL hash_map<Key, MappedValue, HashFunc, EqualFunc>
 
+#define init_dbg_recursguarder , _antiresize_recursion(false)
+
 	HASHMAP_TPL_DECL
 	HASHMAP_DECL::hash_map()
-		: count(0)
 	{}
 
 	HASHMAP_TPL_DECL
 	HASHMAP_DECL::hash_map(size_type min_num_of_init_buckets)
-		: count(0)
 	{
 		rehash(min_num_of_init_buckets);
 	}
 
 	HASHMAP_TPL_DECL
 	HASHMAP_DECL::hash_map(hash_map const& copyfrom)
-		: count(0)
 	{
 		copy(copyfrom);
 	}
@@ -523,7 +538,6 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	template <class InputIterator>
 	HASHMAP_DECL::hash_map(InputIterator first, InputIterator last)
-		: count(0)
 	{
 		insert(first, last);
 	}
@@ -563,6 +577,7 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	impl::found_status HASHMAP_DECL::determine_found_status(size_t at, key_type const& k, impl::purpose p) const
 	{
 		using namespace impl;
+		_ASSERT(p != purpose::find_and_place);  // not capable of answering both at once.
 		found_status st = notfound;
 		if (buckets.occup.size() == 0)
 			return full_notfound;
@@ -573,44 +588,58 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 		else if (!occupied)
 		{
 			// if not occupied and not empty it can only be "deleted". this is the 3rd implicit condition. a deleted bucket is a valid placement.
-			bool empty_or_placepurp = buckets.occup.get_at(at) == buckstate::empty || p == purpose::place;
-			st = empty_or_placepurp ? vacant : notfound;
+			bool purpose_is_place = p == purpose::place;
+			bool empty = buckets.occup.get_at(at) == buckstate::empty;
+			st = purpose_is_place || empty ? vacant : notfound;
 		}
 		return st;
+	}
+
+	HASHMAP_TPL_DECL
+	inline void HASHMAP_DECL::determine_multi_found_status(impl::multi_pos& mp /*out*/, size_t pos, key_type const& k, impl::purpose p) const
+	{
+		using namespace impl;
+		if (p == purpose::find || p == purpose::find_and_place)
+		{
+			mp.find.stat = determine_found_status(pos, k, purpose::find);
+			mp.find.pos = pos;
+		}
+		if (p == purpose::place || p == purpose::find_and_place)
+		{
+			mp.place.stat = determine_found_status(pos, k, purpose::place);
+			mp.place.pos = pos;
+		}
 	}
 
 	HASHMAP_TPL_DECL
 	impl::multi_pos HASHMAP_DECL::find_placement(key_type const& k, impl::purpose p) const
 	{
 		using namespace impl;
-		multi_pos	 mp;
-		if (p == purpose::place)
-			mp.find.stat = unset;
-		auto&	 	 status	 = p == purpose::find ? mp.find.stat : mp.place.stat;
-		size_t&		 pos	 = p == purpose::find ? mp.find.pos : mp.place.pos;
-		size_t const limit   = buckets.array.size();
+		multi_pos	 mp { {unset, 0}, {unset, 0} };
+		size_t const limit  = buckets.array.size();
 		if (limit == 0)
-			return multi_pos { {p == purpose::place ? unset : full_notfound, 0}, {full_notfound, 0} };
-		size_t const h       = hash_fn(k);
-					 pos     = h % limit;
-					 status  = determine_found_status(pos, k, p);
-		size_t       loopcnt = 0;
-		while (status == notfound && loopcnt < limit)
 		{
+			mp.find.stat = mp.place.stat = full_notfound;
+			return mp;
+		}
+		size_t const h      = hash_fn(k);
+		size_t loopcnt 		= 0;
+		size_t pos			= h % limit;
+		auto& mainstatus	= p == purpose::place ? mp.place.stat : mp.find.stat;   // the find status is stronger.
+		determine_multi_found_status(mp /*out*/, pos, k, p);
+		while (mainstatus == notfound && loopcnt < limit)
+		{
+			if (p == purpose::find_and_place && mp.place.stat == vacant)
+				p = purpose::find;  // after placement found, fallback to pure find.
 			// check next (linear probing):
 			pos = increment_modulo(pos, limit);
-			status = determine_found_status(pos, k, p);
-			if (p == purpose::find && mp.place.stat == found)
-			{
-				mp.place.stat = determine_found_status(pos, k, purpose::place);
-				mp.place.pos = pos;
-			}
+			determine_multi_found_status(mp /*out*/, pos, k, p);
 			++loopcnt;
 		}
-		if (status == notfound && loopcnt == limit)
-			status = full_notfound;
-		_ASSERT(status == vacant || status == found || status == full_notfound);  // this function's invariant.
+		if (mainstatus == notfound && loopcnt == limit)
+			mp.find.stat = mp.place.stat = full_notfound;
 
+		_ASSERT(mainstatus == vacant || mainstatus == found || mainstatus == full_notfound);  // this function's invariant.
 		return mp;
 	}
 
@@ -646,7 +675,7 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	typename HASHMAP_DECL::mapped_type& HASHMAP_DECL::operator [] (key_type const& key)
 	{
 		using namespace impl;
-		auto multi_stat_pos = find_placement(key, purpose::find);
+		auto multi_stat_pos = find_placement(key, purpose::find_and_place);
 		if (multi_stat_pos.find.stat != found)  // need to insert if not found. (operator [] 's responsibility)
 		{
 			_ASSERT(multi_stat_pos.place.stat != unset);
@@ -745,6 +774,7 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 
 			if (float(count + 1) / max_load_factor() >= buckets.array.size())  // not enough space to guarantee a correct load factor
 			{
+				_ASSERT(!_antiresize_recursion);
 				rehash(next_advised_bucket_count(count < 30000 ? (count + 1) * 2 : count * 3 / 2, max_load_factor()));
 				auto p = find_placement(key, purpose::place).place;
 				status = p.stat;
@@ -765,12 +795,9 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	{
 		_ASSERT(buckets.array.size() > 3);  // should always be true, normally the minimum size is 13.
 
-		size_t onebefore = decrement_modulo_bucket_size(pos);
 		size_t oneafter = increment_modulo_bucket_size(pos);
-		auto left_state = buckets.occup.get_at(onebefore);
 		auto right_state = buckets.occup.get_at(oneafter);
-		bool is_free =   left_state  == buckstate::empty
-		              && right_state == buckstate::empty;
+		bool is_free = right_state == buckstate::empty;
 		return !is_free;
 	}
 
@@ -861,7 +888,13 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	float HASHMAP_DECL::max_load_factor() const
 	{
-		return 0.8f;
+		return maxloadf;
+	}
+
+	HASHMAP_TPL_DECL
+	void HASHMAP_DECL::max_load_factor(float lf)
+	{
+		maxloadf = std::min(std::max(lf, 0.1f), 1.0f);
 	}
 
 	HASHMAP_TPL_DECL
@@ -892,15 +925,15 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 			// iterate over old buckets and re-insert everything:
 			size_t it = 0;
 			size_t lim = old_buckets.array.size();
+			DBG_NLY(_antiresize_recursion = true);
 			while (it != lim)
 			{
 				if (old_buckets.occup.get_at(it) == buckstate::occupied)
 					emplace(old_buckets.array[it].first, old_buckets.array[it].second);
 				++it;
 			}
-#ifdef _DEBUG
-			_dbgbuckets = &buckets.array[0];
-#endif
+			DBG_NLY(_antiresize_recursion = false;)
+			DBG_NLY(_dbgbuckets = &buckets.array[0];)
 		}
 	}
 
@@ -978,7 +1011,7 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 
 #undef HASHMAP_TPL_DECL
 #undef HASHMAP_DECL
-
+#undef DBG_NLY
 }
 
 #ifdef do_undef_countof_at_file_end

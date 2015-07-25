@@ -158,6 +158,12 @@ struct idiot_hasher
 	size_t operator()(const T& x) const { return 0; }
 };
 
+template< typename T >
+struct identity_hasher
+{
+	size_t operator()(const T& x) const { return (size_t)x; }
+};
+
 int main()
 {
 	test01();
@@ -323,7 +329,7 @@ int main()
 
 	 {
 		 std::cout << "8 insertions followed by deletions" << std::endl;
-		 container::hash_map<int, std::shared_ptr<std::string>> mymap;
+		 container::hash_map<int, std::shared_ptr<std::string>, identity_hasher<int>> mymap;
 		 
 		 mymap.reserve(8);
 		 _ASSERT(mymap.bucket_count() == 13);
@@ -333,8 +339,11 @@ int main()
 
 		 mymap[0].reset(new std::string("bleu"));
 		 mymap[13].reset(new std::string("vert"));
+		 _ASSERT(mymap.count_buckstate_(container::buckstate::empty) == 11);
 
 		 auto next = mymap.erase(mymap.find(0));
+		 _ASSERT(mymap.count_buckstate_(container::buckstate::deleted) == 1);
+		 _ASSERT(mymap.count_buckstate_(container::buckstate::empty) == 11);
 		 _ASSERT(next->first == 13);
 		 _ASSERT(next == mymap.find(13));
 		 _ASSERT(next == mymap.begin());
@@ -342,10 +351,20 @@ int main()
 		 _ASSERT(next == mymap.end());
 		 next = mymap.erase(mymap.find(13));
 		 _ASSERT(next == mymap.end());
+		 _ASSERT(mymap.count_buckstate_(container::buckstate::empty) == 12);
+		 _ASSERT(mymap.count_buckstate_(container::buckstate::deleted) == 1);
 		 
-		 // deleted count is 2 because 0 and 13 conflicts (collision) therefore make a CLUMP at position 0, of size 2.
-		 // so when we delete stuff here, it gets marked as deleted, not empty.
-		 _ASSERT(mymap.count_buckstate_(container::buckstate::deleted) == 2);
+		 // state of map after 2 colliding at 0 and 13 insertions:
+		 //  0     1     2     3    4      5     6     7     8     9    10    11    12
+		 // bleu  vert {emp} {emp} {emp} {emp} {emp} {emp} {emp} {emp} {emp} {emp} {emp}  
+
+		 // state after first deletion:
+		 //   0     1    2     3    4      5     6     7     8     9    10    11    12
+		 // {del} vert {emp} {emp} {emp} {emp} {emp} {emp} {emp} {emp} {emp} {emp} {emp}  
+		 
+		 // state after second deletion:
+		 //   0     1     2     3    4    5    6    7    8    9    10    11    12
+		 // {del} {emp} {emp} {emp} {emp} {emp} {emp} {emp} {emp} {emp} {emp} {emp}  
 
 		 static char const* values[] = {"bleu", "vert", "rouge", "orange", "marron", "pourpre", "bordeaux", "blanc"};
 		 static_assert(sizeof(values)/sizeof(values[0]) == 8, "code mistake in array length");
@@ -430,10 +449,14 @@ int main()
 
 		 _ASSERT(map.count_buckstate_(container::buckstate::deleted) == 4);
 		 _ASSERT(map.size() == 3);
+		 _ASSERT(map.find(2) == map.end());
+		 _ASSERT(map.find(3) == map.end());
+		 _ASSERT(map.find(40) == map.end());
 		 _ASSERT(map[50] == "fifty");
 		 _ASSERT(map[60] == "sixty");
 		 _ASSERT(map[7] == "seven");
-
+		 
+		 // try to exercise the recycler (delete is ok for placement)
 		 map[2] = "two";
 		 _ASSERT(map.size() == 4);
 		 _ASSERT(map.count_buckstate_(container::buckstate::deleted) == 3);
@@ -734,7 +757,7 @@ erase_test:
 		std::cout << "std map: \t\t" << std::chrono::duration <double, std::milli>(diff).count() << " ms" << std::endl;
 	}
 
-	std::cout << "\n== 50k random finds among 1M contenance ==" << std::endl;
+	std::cout << "\n== 50k random finds among 32k contenance ==" << std::endl;
 
 	{
 		mysrand(0);
