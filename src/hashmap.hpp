@@ -357,12 +357,13 @@ namespace container
 	static size_t next_advised_bucket_count(size_t contenance, float max_load_factor)
 	{
 		static size_t const cnt = _countof(detail::primes);
-		size_t minbuckets = (size_t)(contenance / max_load_factor);
+		size_t minbuckets = (size_t)ceil(contenance / max_load_factor);
 		auto beg = &detail::primes[0];
 		auto end = beg + cnt;
-		auto it = std::upper_bound(beg, end, contenance);
+		auto it = std::upper_bound(beg, end, minbuckets);
 		if (it == end)
 			return detail::improve_primeness((size_t)(minbuckets * 1.1113f));
+		_ASSERT(*it >= minbuckets);
 		return *it;
 	}
 
@@ -911,7 +912,10 @@ inline size_t decrement_modulo(size_t value, size_t limit)
 	HASHMAP_TPL_DECL
 	void HASHMAP_DECL::rehash(size_type n)  // num of buckets
 	{
-		size_t minbuckets_for_currentsize = size_t((float)size() / max_load_factor());
+		// we need to respect some mininum size criterias as invariants of map, or we'll run into bugs.
+		// min size 3 must be respected for the erase method to work.
+		// and the sizing must be adapted to the contents.
+		size_t minbuckets_for_currentsize = std::max<size_t>(3, size_t(ceil((float)size() / max_load_factor())));
 		if (n < minbuckets_for_currentsize)
 			n = minbuckets_for_currentsize;
 		if (n != buckets.array.size())

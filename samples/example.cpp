@@ -155,7 +155,7 @@ void test10();
 template< typename T >
 struct idiot_hasher
 {
-	size_t operator()(const T& x) const { return 0; }
+	size_t operator()(const T&) const { return 0; }
 };
 
 template< typename T >
@@ -164,8 +164,15 @@ struct identity_hasher
 	size_t operator()(const T& x) const { return (size_t)x; }
 };
 
+#ifdef _DEBUG
+# define DBG_NLY(x) x
+#else
+# define DBG_NLY(x)
+#endif
+
 int main()
 {
+	DBG_NLY(std::cout << "gcc test suite" << std::endl;)
 	test01();
 	test02();
 	test03();
@@ -188,6 +195,7 @@ int main()
 			VERIFY(++m.find(i)->second == '1' + i % 9);
 	}
 
+	DBG_NLY(std::cout << "basic invariants" << std::endl;)
 	{
 		container::hash_map< std::string, NeedCopy > testmap;
 
@@ -232,6 +240,7 @@ int main()
 	}
 	//_ASSERT(gcnt == 0);  does not pass. no comprendo aqui. gcnt ==1 ?? WAT!?
 
+	DBG_NLY(std::cout << "cpprefreence example" << std::endl;)
 	 {  // from cppreference.
 		 container::hash_map<std::string, std::string> mymap;
 
@@ -255,12 +264,14 @@ int main()
 		 _ASSERT(mymap["Russia"] == "Moscow"); // it should be determinisic, but by 2 times I had to change these asserts. I don't understand this volatility.
 	 }
 
+	DBG_NLY(std::cout << "heavy load" << std::endl;)
 	 {  // heavy load test.
 		 container::hash_map<int, int> mymap;
 		 for (int i = 0; i < 1000000; ++i)
-			 mymap[myrand()] = myrand();
+			 mymap[myrand() * myrand()] = myrand();
 	 }
 
+	DBG_NLY(std::cout << "planet strings" << std::endl;)
 	 {
 		 container::hash_map<std::string, int> mymap;
 		 mymap["Mars"] = 3000;
@@ -275,6 +286,7 @@ int main()
 		 _ASSERT(mymap.at("Jupiter") == 60000 + 9638 + 272);
 	 }
 
+	DBG_NLY(std::cout << "char 2 bool" << std::endl;)
 	 {
 		 container::hash_map<char, bool> mapofbool;
 		 auto cit = mapofbool.cbegin();
@@ -285,6 +297,7 @@ int main()
 		 _ASSERT(i == 0);
 	 }
 
+	DBG_NLY(std::cout << "pointers keys" << std::endl;)
 	 {
 		 typedef container::hash_map<char, std::vector<int>> char2vint;
 		 container::hash_map<void*, char2vint> mapofmap;
@@ -309,6 +322,7 @@ int main()
 		 _ASSERT(mapofmap.load_factor() <= 0.8f);
 	 }
 
+	DBG_NLY(std::cout << "swapping" << std::endl;)
 	 {
 		 std::vector<int> nums(88000);
 		 for (int i = 0; i < (int)nums.size(); ++i)
@@ -328,8 +342,10 @@ int main()
 	 }
 
 	 {
-		 std::cout << "8 insertions followed by deletions" << std::endl;
+		 DBG_NLY( std::cout << "8 insertions followed by deletions" << std::endl; )
 		 container::hash_map<int, std::shared_ptr<std::string>, identity_hasher<int>> mymap;
+
+		 mymap.max_load_factor(0.8f);
 		 
 		 mymap.reserve(8);
 		 _ASSERT(mymap.bucket_count() == 13);
@@ -389,12 +405,14 @@ int main()
 		 }
 		 _ASSERT(mymap.size() == 0);
 		 
-		 std::cout << "buckstate deleted count: " << mymap.count_buckstate_(container::buckstate::deleted) << std::endl;
+		 DBG_NLY(std::cout << "buckstate deleted count: " << mymap.count_buckstate_(container::buckstate::deleted) << std::endl;)
 	 }
 	 
 	 {
-		 std::cout << "4 insertions followed by deletions" << std::endl;
+		 DBG_NLY(std::cout << "4 insertions followed by deletions" << std::endl;)
 		 container::hash_map<int, std::shared_ptr<std::string>> mymap;
+
+		 mymap.max_load_factor(0.8f);
 		 
 		 mymap.reserve(8);
 		 
@@ -415,13 +433,14 @@ int main()
 		 // we cannot assert anything here, because std hash functions are not specified by standard.
 		 // microsoft causes 3 collisions in this case, gcc and clang 0.
 		 //_ASSERT(delcnt == 0);
-		 std::cout << "buckstate deleted count: " << delcnt << std::endl;
+		 DBG_NLY(std::cout << "buckstate deleted count: " << delcnt << std::endl;)
 	 }
 
 	 {
 		 typedef container::hash_map<int, std::string, idiot_hasher<int>> i2s;
 
 		 i2s map;
+		 map.max_load_factor(0.8f);
 
 		 map[1] = "one";
 		 auto empties = map.count_buckstate_(container::buckstate::empty) + 1;
